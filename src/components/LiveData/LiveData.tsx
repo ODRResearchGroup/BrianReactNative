@@ -267,27 +267,27 @@ export default function LiveData() {
 
     const sum = samples.reduce(
       (accumulated, sample) => ({
-        CH4: accumulated.CH4 + sample.CH4,
-        NH3: accumulated.NH3 + sample.NH3,
-        HCHO: accumulated.HCHO + sample.HCHO,
-        VOC: accumulated.VOC + sample.VOC,
-        Odour: accumulated.Odour + sample.Odour,
-        H2S: accumulated.H2S + sample.H2S,
-        Etoh: accumulated.Etoh + sample.Etoh,
-        NO2: accumulated.NO2 + sample.NO2,
+        CH4: (accumulated.CH4 ?? 0) + (sample.CH4 ?? 0),
+        NH3: (accumulated.NH3 ?? 0) + (sample.NH3 ?? 0),
+        HCHO: (accumulated.HCHO ?? 0) + (sample.HCHO ?? 0),
+        VOC: (accumulated.VOC ?? 0) + (sample.VOC ?? 0),
+        Odour: (accumulated.Odour ?? 0) + (sample.Odour ?? 0),
+        H2S: (accumulated.H2S ?? 0) + (sample.H2S ?? 0),
+        Etoh: (accumulated.Etoh ?? 0) + (sample.Etoh ?? 0),
+        NO2: (accumulated.NO2 ?? 0) + (sample.NO2 ?? 0),
       }),
       { CH4: 0, NH3: 0, HCHO: 0, VOC: 0, Odour: 0, H2S: 0, Etoh: 0, NO2: 0 },
     );
 
     const avg: SensorReadings = {
-      CH4: sum.CH4 / samples.length,
-      NH3: sum.NH3 / samples.length,
-      HCHO: sum.HCHO / samples.length,
-      VOC: sum.VOC / samples.length,
-      Odour: sum.Odour / samples.length,
-      H2S: sum.H2S / samples.length,
-      Etoh: sum.Etoh / samples.length,
-      NO2: sum.NO2 / samples.length,
+      CH4: (sum.CH4 ?? 0) / samples.length,
+      NH3: (sum.NH3 ?? 0) / samples.length,
+      HCHO: (sum.HCHO ?? 0) / samples.length,
+      VOC: (sum.VOC ?? 0) / samples.length,
+      Odour: (sum.Odour ?? 0) / samples.length,
+      H2S: (sum.H2S ?? 0) / samples.length,
+      Etoh: (sum.Etoh ?? 0) / samples.length,
+      NO2: (sum.NO2 ?? 0) / samples.length,
     };
 
     samplingRef.current.samples = [];
