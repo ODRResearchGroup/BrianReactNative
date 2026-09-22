@@ -104,6 +104,7 @@ export type WalkRow = {
   deviceId: string;
   deviceName: string | null;
   startedAt: number;
+  resumedAt: number | null;
   endedAt: number | null;
   status: 'active' | 'completed' | 'interrupted';
   appVersion: string | null;
@@ -261,6 +262,7 @@ async function getDb(): Promise<SQLite.SQLiteDatabase> {
         device_id   TEXT NOT NULL DEFAULT 'unknown',
         device_name TEXT,
         started_at  INTEGER NOT NULL,
+        resumed_at  INTEGER,
         ended_at    INTEGER,
         status      TEXT NOT NULL DEFAULT 'active',
         app_version TEXT,
@@ -371,6 +373,9 @@ async function getDb(): Promise<SQLite.SQLiteDatabase> {
       await db.executeSql(
         'ALTER TABLE sensor_records ADD COLUMN bme680_gas_resistance REAL;',
       );
+    } catch {}
+    try {
+      await db.executeSql('ALTER TABLE walks ADD COLUMN resumed_at INTEGER;');
     } catch {}
     await migrateSensorRecordsSchemaForNullableChannels(db);
     await db.executeSql(`
@@ -555,10 +560,10 @@ export async function listSensorRecordsByWalkId(
   const db = await getDb();
   const [res] = await db.executeSql(
     `SELECT * FROM sensor_records
-     WHERE (walk_id = ? OR (walk_id IS NULL AND title = ?))
+     WHERE walk_id = ?
        AND record_type = 'walk_sample'
      ORDER BY recordedAt ASC;`,
-    [walkId, walkId],
+    [walkId],
   );
   const rows: SensorRecord[] = [];
   for (let i = 0; i < res.rows.length; i++) {
@@ -956,12 +961,13 @@ export async function upsertWalk(row: WalkRow): Promise<void> {
   const db = await getDb();
   await db.executeSql(
     `INSERT INTO walks (
-      id, device_id, device_name, started_at, ended_at, status, app_version, notes
-    ) VALUES (?,?,?,?,?,?,?,?)
+      id, device_id, device_name, started_at, resumed_at, ended_at, status, app_version, notes
+    ) VALUES (?,?,?,?,?,?,?,?,?)
     ON CONFLICT(id) DO UPDATE SET
       device_id = excluded.device_id,
       device_name = COALESCE(excluded.device_name, walks.device_name),
       started_at = walks.started_at,
+      resumed_at = COALESCE(excluded.resumed_at, walks.resumed_at),
       ended_at = excluded.ended_at,
       status = excluded.status,
       app_version = COALESCE(excluded.app_version, walks.app_version),
@@ -971,6 +977,7 @@ export async function upsertWalk(row: WalkRow): Promise<void> {
       row.deviceId,
       row.deviceName ?? null,
       row.startedAt,
+      row.resumedAt ?? null,
       row.endedAt ?? null,
       row.status,
       row.appVersion ?? null,
@@ -1013,8 +1020,8 @@ export async function updateWalkDevice(
 export async function reactivateWalk(id: string): Promise<void> {
   const db = await getDb();
   await db.executeSql(
-    "UPDATE walks SET ended_at = NULL, status = 'active' WHERE id = ?;",
-    [id],
+    "UPDATE walks SET ended_at = NULL, resumed_at = ?, status = 'active' WHERE id = ?;",
+    [Date.now(), id],
   );
 }
 
@@ -1044,6 +1051,7 @@ function mapWalk(r: any): WalkRow {
     deviceId: r.device_id ?? 'unknown',
     deviceName: r.device_name ?? null,
     startedAt: r.started_at,
+    resumedAt: r.resumed_at ?? null,
     endedAt: r.ended_at ?? null,
     status:
       r.status === 'active' || r.status === 'interrupted'

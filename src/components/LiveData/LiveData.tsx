@@ -26,7 +26,7 @@ import CustomRadarChart from '../common/CustomRadarChart';
 import FingerprintModal from '../common/FingerprintModal';
 import TimedProgressBar from './components/TimeBar';
 import { SensorReadings } from '../../types/fingerprintTypes';
-import { SensorEvent, emitter } from '../../types/events';
+import { SensorEvent } from '../../types/events';
 import { Alert } from 'react-native';
 import Svg, { Path, Line, Rect } from 'react-native-svg';
 import { useInfluxDB } from '../../services/influx/InfluxDBService';
@@ -319,7 +319,6 @@ export default function LiveData() {
         },
       } as any;
 
-      emitter.emit('sensor_reading', fingerprint);
       setPendingFingerprint(fingerprint);
       setShowFingerprintModal(true);
     }

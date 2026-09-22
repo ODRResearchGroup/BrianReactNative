@@ -40,7 +40,12 @@ const SENSOR_LABELS = [
 ];
 import AudioRecorderPlayer from 'react-native-audio-recorder-player';
 import { useBLE } from '../../BLEUniversal';
-import { DocumentDirectoryPath, copyFile, mkdir } from 'react-native-fs';
+import {
+  DocumentDirectoryPath,
+  copyFile,
+  exists,
+  mkdir,
+} from 'react-native-fs';
 import Svg, { Path, Rect, Line } from 'react-native-svg';
 import useLiveLocation from '../../hooks/useLiveLocation';
 import { SensorEvent, emitter } from '../../types/events';
@@ -151,15 +156,21 @@ export default function FingerprintModal({
     };
   }, [characteristicValues]);
 
+  const ensureDirectory = useCallback(async (path: string) => {
+    if (!(await exists(path))) {
+      await mkdir(path);
+    }
+  }, []);
+
   const handlePhotoTaken = async (tempPhotoPath: string) => {
     const permanentPath = walkId
       ? `${DocumentDirectoryPath}/walks/${walkId}/media/${photoCaptureIdRef.current}.jpg`
       : `${DocumentDirectoryPath}/fingerprint_${Date.now()}.jpg`;
     try {
       if (walkId) {
-        await mkdir(`${DocumentDirectoryPath}/walks`);
-        await mkdir(`${DocumentDirectoryPath}/walks/${walkId}`);
-        await mkdir(`${DocumentDirectoryPath}/walks/${walkId}/media`);
+        await ensureDirectory(`${DocumentDirectoryPath}/walks`);
+        await ensureDirectory(`${DocumentDirectoryPath}/walks/${walkId}`);
+        await ensureDirectory(`${DocumentDirectoryPath}/walks/${walkId}/media`);
       }
       await copyFile(tempPhotoPath, permanentPath);
       setPhotoPath(permanentPath);
@@ -217,9 +228,9 @@ export default function FingerprintModal({
       recordingIdRef.current = recordingId;
       const startedAtMs = Date.now();
       if (walkId) {
-        await mkdir(`${DocumentDirectoryPath}/walks`);
-        await mkdir(`${DocumentDirectoryPath}/walks/${walkId}`);
-        await mkdir(`${DocumentDirectoryPath}/walks/${walkId}/media`);
+        await ensureDirectory(`${DocumentDirectoryPath}/walks`);
+        await ensureDirectory(`${DocumentDirectoryPath}/walks/${walkId}`);
+        await ensureDirectory(`${DocumentDirectoryPath}/walks/${walkId}/media`);
         const targetPath = `${DocumentDirectoryPath}/walks/${walkId}/media/${recordingId}.m4a`;
         await copyFile(localUri.replace(/^file:\/\//, ''), targetPath);
         localUri = targetPath;

@@ -239,6 +239,7 @@ export const InfluxDBProvider = ({
             deviceId: 'unknown',
             deviceName: null,
             startedAt: Date.now(),
+            resumedAt: null,
             endedAt: null,
             status: 'active',
             appVersion: null,

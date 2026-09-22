@@ -99,8 +99,9 @@ export default function SmellWalkScreen() {
               text: 'End',
               style: 'cancel',
               onPress: () => {
+                const finalizedAt = Date.now();
                 Promise.all(
-                  rows.map(row => finalizeInterruptedWalk(row.id, Date.now())),
+                  rows.map(row => finalizeInterruptedWalk(row.id, finalizedAt)),
                 ).finally(() => {
                   setDidPromptResume(true);
                 });
