@@ -70,6 +70,10 @@ After moving the project, run `npm install` and then `npm run android:release`.
 
 For iOS, remember to install CocoaPods dependencies (this only needs to be run on first clone or after updating native deps).
 
+During an active smell walk, the app keeps the screen awake using
+`react-native-keep-awake` on both Android and iOS. This screen-on behavior does
+not require additional iOS `Info.plist` permission keys.
+
 The first time you create a new project, run the Ruby bundler to install CocoaPods itself:
 
 ```sh

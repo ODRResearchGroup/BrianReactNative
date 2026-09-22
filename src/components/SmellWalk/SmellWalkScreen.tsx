@@ -210,7 +210,10 @@ export default function SmellWalkScreen() {
                 : 'Ready to record'}
             </Text>
             {isSmellWalkActive && (
-              <View style={styles.recordingBadge}>
+              <View
+                accessibilityRole="text"
+                accessibilityLabel="Recording in progress"
+                style={styles.recordingBadge}>
                 <View style={styles.recordingDot} />
                 <Text style={styles.recordingBadgeText}>Recording</Text>
               </View>
