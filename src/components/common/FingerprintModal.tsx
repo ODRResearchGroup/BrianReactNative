@@ -369,8 +369,9 @@ export default function FingerprintModal({
         deltaNo2: null,
       });
       if (photoPath) {
+        const photoCaptureId = photoCaptureIdRef.current;
         await insertCapture({
-          id: photoCaptureIdRef.current,
+          id: photoCaptureId,
           sensorRecordId: id,
           walkId,
           type: 'photo',
@@ -389,6 +390,20 @@ export default function FingerprintModal({
           longitudeRaw: location?.longitude ?? null,
           capturedAt: Date.now(),
           annotationIndex: null,
+        });
+        await enqueueSync({
+          id: uuidv4(),
+          entityType: 'capture',
+          entityId: photoCaptureId,
+          operation: 'create',
+          payloadJson: JSON.stringify({
+            id: photoCaptureId,
+            sensorRecordId: id,
+            walkId,
+            type: 'photo',
+            localPath: photoPath,
+          }),
+          createdAt: Date.now(),
         });
       }
 

@@ -91,7 +91,6 @@ export default function SmellWalkScreen() {
           setDidPromptResume(true);
           return;
         }
-        const latest = rows[0];
         Alert.alert(
           'Interrupted walk found',
           'Your last walk was interrupted. Do you want to resume it?',
@@ -100,7 +99,9 @@ export default function SmellWalkScreen() {
               text: 'End',
               style: 'cancel',
               onPress: () => {
-                finalizeInterruptedWalk(latest.id, Date.now()).finally(() => {
+                Promise.all(
+                  rows.map(row => finalizeInterruptedWalk(row.id, Date.now())),
+                ).finally(() => {
                   setDidPromptResume(true);
                 });
               },
@@ -109,7 +110,7 @@ export default function SmellWalkScreen() {
               text: 'Resume',
               onPress: () => {
                 setDidPromptResume(true);
-                startSmellWalk(latest.id);
+                startSmellWalk(rows[0].id);
               },
             },
           ],

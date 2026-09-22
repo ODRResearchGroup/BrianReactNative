@@ -231,7 +231,7 @@ export async function exportSmellWalkZip(walkId: string): Promise<string> {
       .map(async capture => {
         const source = capture.localPath!.replace(/^file:\/\//, '');
         const extension = capture.type === 'audio' ? 'm4a' : 'jpg';
-        const destination = `${mediaDir}/${capture.id}.${extension}`;
+        const destination = `${mediaDir}/${capture.type}_${capture.id}.${extension}`;
         if (await RNFS.exists(source)) {
           await RNFS.copyFile(source, destination);
         }

@@ -390,15 +390,21 @@ async function getDb(): Promise<SQLite.SQLiteDatabase> {
     await db.executeSql(`
       INSERT OR IGNORE INTO walks (id, device_id, device_name, started_at, ended_at, status)
       SELECT
-        walk_id,
+        walk_ids.walk_id,
         COALESCE(NULLIF(MIN(description), ''), 'unknown'),
         NULL,
-        MIN(recordedAt),
-        MAX(recordedAt),
+        COALESCE(MIN(recordedAt), CAST(strftime('%s','now') AS INTEGER) * 1000),
+        COALESCE(MAX(recordedAt), CAST(strftime('%s','now') AS INTEGER) * 1000),
         'completed'
-      FROM sensor_records
-      WHERE walk_id IS NOT NULL
-      GROUP BY walk_id;
+      FROM (
+        SELECT walk_id FROM sensor_records WHERE walk_id IS NOT NULL
+        UNION
+        SELECT walk_id FROM captures WHERE walk_id IS NOT NULL
+        UNION
+        SELECT walk_id FROM annotations WHERE walk_id IS NOT NULL
+      ) AS walk_ids
+      LEFT JOIN sensor_records ON sensor_records.walk_id = walk_ids.walk_id
+      GROUP BY walk_ids.walk_id;
     `);
     await db.executeSql(`
       UPDATE captures
