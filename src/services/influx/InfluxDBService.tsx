@@ -235,7 +235,9 @@ export const InfluxDBProvider = ({
             [SENSOR_BY_CHARACTERISTIC_UUID[
               event.characteristicUUID.toLowerCase()
             ]?.key ?? event.characteristicUUID]:
-              typeof event.decodedValue === 'number' ? event.decodedValue : 0,
+              typeof event.decodedValue === 'number'
+                ? event.decodedValue
+                : null,
           },
           units: {
             [SENSOR_BY_CHARACTERISTIC_UUID[

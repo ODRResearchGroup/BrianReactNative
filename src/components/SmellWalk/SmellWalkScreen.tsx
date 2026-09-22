@@ -255,7 +255,7 @@ export default function SmellWalkScreen() {
             <View key={sensor.key} style={styles.envRow}>
               <Text style={styles.envLabel}>{sensor.label}</Text>
               <Text style={styles.envValue}>
-                {sensor.value === undefined ? '—' : sensor.value.toFixed(2)}{' '}
+                {sensor.value == null ? '—' : sensor.value.toFixed(2)}{' '}
                 {sensor.unit}
               </Text>
             </View>

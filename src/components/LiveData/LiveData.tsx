@@ -406,8 +406,7 @@ export default function LiveData() {
               <View key={item.key} style={styles.envRow}>
                 <Text style={styles.envLabel}>{item.label}</Text>
                 <Text style={styles.envValue}>
-                  {item.value === undefined ? '—' : item.value.toFixed(2)}{' '}
-                  {item.unit}
+                  {item.value == null ? '—' : item.value.toFixed(2)} {item.unit}
                 </Text>
               </View>
             ))}
