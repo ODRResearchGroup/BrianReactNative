@@ -1,12 +1,12 @@
 import React from 'react';
-import { View, StyleSheet, Dimensions } from 'react-native';
+import {View, StyleSheet, Dimensions} from 'react-native';
 import useLiveLocation from '../util/useLiveLocation';
 import LiveLocationMap from './LiveLocationMap';
 
-const { width } = Dimensions.get('window');
+const {width} = Dimensions.get('window');
 
 export default function MiniMapOverlay() {
-  const { location } = useLiveLocation();
+  const {location} = useLiveLocation();
 
   return (
     <View style={styles.container}>

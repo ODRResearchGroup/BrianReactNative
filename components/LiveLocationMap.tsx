@@ -1,14 +1,18 @@
-import React, { useRef, useEffect } from 'react';
-import { StyleSheet, View } from 'react-native';
-import { MapView, Camera, ShapeSource, CircleLayer } from '@maplibre/maplibre-react-native';
+import React, {useRef, useEffect} from 'react';
+import {StyleSheet, View} from 'react-native';
+import {
+  MapView,
+  Camera,
+  ShapeSource,
+  CircleLayer,
+} from '@maplibre/maplibre-react-native';
 
 type LiveLocationMapProps = {
-  coordinates: { latitude: number; longitude: number } | null;
+  coordinates: {latitude: number; longitude: number} | null;
 };
 
-export default function LiveLocationMap({ coordinates }: LiveLocationMapProps) {
-const cameraRef = useRef<React.ElementRef<typeof Camera>>(null);
-
+export default function LiveLocationMap({coordinates}: LiveLocationMapProps) {
+  const cameraRef = useRef<React.ElementRef<typeof Camera>>(null);
 
   useEffect(() => {
     if (coordinates && cameraRef.current) {
@@ -25,8 +29,7 @@ const cameraRef = useRef<React.ElementRef<typeof Camera>>(null);
     <View style={styles.container}>
       <MapView
         style={styles.map}
-        mapStyle="https://basemaps.cartocdn.com/gl/positron-gl-style/style.json"
-      >
+        mapStyle="https://basemaps.cartocdn.com/gl/positron-gl-style/style.json">
         <Camera ref={cameraRef} zoomLevel={15} />
 
         {coordinates && (
@@ -44,8 +47,7 @@ const cameraRef = useRef<React.ElementRef<typeof Camera>>(null);
                   properties: {},
                 },
               ],
-            }}
-          >
+            }}>
             <CircleLayer
               id="user-point"
               style={{
@@ -63,6 +65,6 @@ const cameraRef = useRef<React.ElementRef<typeof Camera>>(null);
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  map: { flex: 1 },
+  container: {flex: 1},
+  map: {flex: 1},
 });

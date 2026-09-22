@@ -32,6 +32,23 @@ npm run android
 yarn android
 ```
 
+The normal Android command installs a debug build that loads JavaScript from
+Metro. To install a standalone release build that continues working after the
+phone is disconnected, run:
+
+```sh
+npm run android:release
+```
+
+This bundles JavaScript into the APK, so Metro is not required on the phone.
+The generated APK is also available at
+`android/app/build/outputs/apk/release/app-release.apk`.
+
+On Windows, keep this project in a short, non-OneDrive path such as
+`C:/ODR/BrianReactNative`. React Native's New Architecture and Reanimated use
+CMake paths that exceed Windows' 260-character limit in the current location.
+After moving the project, run `npm install` and then `npm run android:release`.
+
 ### iOS
 
 For iOS, remember to install CocoaPods dependencies (this only needs to be run on first clone or after updating native deps).

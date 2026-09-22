@@ -1,5 +1,5 @@
 import { Emitter } from 'mitt';
-import mitt from "mitt";
+import mitt from 'mitt';
 // Flexible metadata for events
 export type EventMetadata = Record<string, string | number | boolean | Date>;
 
@@ -45,6 +45,6 @@ export type Events = {
 export type AppEventEmitter = Emitter<Events>;
 export const emitter = mitt<Events>();
 //here you need to create an event omitter for the sensor data in datadisplay
-//in data dsiplay you will listen to button presses for "arhcive" 
+//in data dsiplay you will listen to button presses for "arhcive"
 //this means that whatever is archieverd is listed to
 //then tjis listened to even will be implemented with async storage

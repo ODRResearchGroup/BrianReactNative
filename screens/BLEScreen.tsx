@@ -1,8 +1,6 @@
 import React, { useState } from 'react';
 import {
   Text,
-  Button,
-  FlatList,
   SafeAreaView,
   StyleSheet,
   View,
@@ -21,7 +19,6 @@ const BLELoggerApp = () => {
     scanForDevices,
     connectToDevice,
     enableNotifications,
-    characteristicValues,
   } = useBLE();
 
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
@@ -71,7 +68,7 @@ const BLELoggerApp = () => {
 
   const handleConnect = async () => {
     const selected = devices.find(d => d.id === selectedDeviceId);
-    if (!selected) return Alert.alert('Device not found');
+    if (!selected) {return Alert.alert('Device not found');}
 
     try {
       await connectToDevice(selected as Device);
@@ -104,7 +101,7 @@ const BLELoggerApp = () => {
         {/* My Devices Section */}
         <View style={styles.devicesSection}>
           <Text style={styles.sectionLabel}>MY DEVICES</Text>
-          
+
           <View style={styles.devicesList}>
             {devices.length === 0 ? (
               <View style={styles.emptyState}>
@@ -152,8 +149,8 @@ const BLELoggerApp = () => {
           </Pressable>
         )}
 
-    
-        
+
+
       </ScrollView>
     </SafeAreaView>
   );
@@ -208,7 +205,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   devicesList: {
-   backgroundColor: '  #fff8f0ff',
+    backgroundColor: '#fff8f0ff',
     borderRadius: 12,
     borderWidth: 1,
     borderColor: '#e0e0e0',

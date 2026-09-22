@@ -1,8 +1,11 @@
-import { useState, useEffect } from 'react';
-import { PermissionsAndroid, Platform } from 'react-native';
-import Geolocation, { GeoPosition, GeoError } from 'react-native-geolocation-service';
+import {useState, useEffect} from 'react';
+import {PermissionsAndroid, Platform} from 'react-native';
+import Geolocation, {
+  GeoPosition,
+  GeoError,
+} from 'react-native-geolocation-service';
 
-type Coordinates = { latitude: number; longitude: number };
+type Coordinates = {latitude: number; longitude: number};
 
 export default function useLiveLocation() {
   const [location, setLocation] = useState<Coordinates | null>(null);
@@ -16,13 +19,14 @@ export default function useLiveLocation() {
           PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
           {
             title: 'Location Permission',
-            message: 'This app requires access to your location for live updates.',
+            message:
+              'This app requires access to your location for live updates.',
             buttonPositive: 'OK',
-          }
+          },
         );
 
         const coarse = await PermissionsAndroid.request(
-          PermissionsAndroid.PERMISSIONS.ACCESS_COARSE_LOCATION
+          PermissionsAndroid.PERMISSIONS.ACCESS_COARSE_LOCATION,
         );
 
         return (
@@ -86,7 +90,7 @@ export default function useLiveLocation() {
                   maximumAge: 0,
                   forceRequestLocation: true,
                   showLocationDialog: true,
-                }
+                },
               );
             }, 3000);
           }
@@ -97,7 +101,7 @@ export default function useLiveLocation() {
           maximumAge: 0,
           forceRequestLocation: true,
           showLocationDialog: true,
-        }
+        },
       );
 
       // 🛰️ Continuous updates (watchPosition)
@@ -120,7 +124,7 @@ export default function useLiveLocation() {
           fastestInterval: 1000,
           forceRequestLocation: true,
           showLocationDialog: true,
-        }
+        },
       );
     };
 
@@ -138,5 +142,5 @@ export default function useLiveLocation() {
     };
   }, []);
 
-  return { location, error };
+  return {location, error};
 }
