@@ -16,7 +16,10 @@ import FingerprintModal from '../common/FingerprintModal';
 import LiveLocationMap from '../common/LiveLocationMap';
 import { useInfluxDB } from '../../services/influx/InfluxDBService';
 import { exportSmellWalkZip } from '../../services/sync/exportService';
-import { listInterruptedWalks } from '../../services/database/db';
+import {
+  finalizeInterruptedWalk,
+  listInterruptedWalks,
+} from '../../services/database/db';
 import {
   NavigationProp,
   useFocusEffect,
@@ -96,7 +99,11 @@ export default function SmellWalkScreen() {
             {
               text: 'End',
               style: 'cancel',
-              onPress: () => setDidPromptResume(true),
+              onPress: () => {
+                finalizeInterruptedWalk(latest.id, Date.now()).finally(() => {
+                  setDidPromptResume(true);
+                });
+              },
             },
             {
               text: 'Resume',

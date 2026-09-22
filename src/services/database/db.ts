@@ -18,14 +18,14 @@ export type SensorRecord = {
   latitude: number | null;
   longitude: number | null;
   accuracyM?: number | null;
-  ch4: number;
-  nh3: number;
-  hcho: number;
-  voc: number;
-  odour: number;
-  h2s: number;
-  etoh: number;
-  no2: number;
+  ch4: number | null;
+  nh3: number | null;
+  hcho: number | null;
+  voc: number | null;
+  odour: number | null;
+  h2s: number | null;
+  etoh: number | null;
+  no2: number | null;
   co: number | null;
   smoke: number | null;
   h2: number | null;
@@ -114,6 +114,95 @@ export type WalkRow = {
 
 let dbPromise: Promise<SQLite.SQLiteDatabase> | null = null;
 
+async function migrateSensorRecordsSchemaForNullableChannels(
+  db: SQLite.SQLiteDatabase,
+): Promise<void> {
+  const [infoResult] = await db.executeSql(
+    'PRAGMA table_info(sensor_records);',
+  );
+  let needsMigration = false;
+  for (let i = 0; i < infoResult.rows.length; i++) {
+    const row = infoResult.rows.item(i);
+    if (
+      ['ch4', 'nh3', 'hcho', 'voc', 'odour', 'h2s', 'etoh', 'no2'].includes(
+        row.name,
+      ) &&
+      row.notnull === 1
+    ) {
+      needsMigration = true;
+      break;
+    }
+  }
+  if (!needsMigration) {
+    return;
+  }
+
+  await db.executeSql('BEGIN TRANSACTION;');
+  try {
+    await db.executeSql(`
+      CREATE TABLE IF NOT EXISTS sensor_records_v2 (
+        id            TEXT PRIMARY KEY,
+        title         TEXT NOT NULL DEFAULT '',
+        description   TEXT NOT NULL DEFAULT '',
+        walk_id       TEXT,
+        record_type   TEXT NOT NULL DEFAULT 'fingerprint',
+        recordedAt    INTEGER NOT NULL,
+        latitude      REAL,
+        longitude     REAL,
+        accuracy_m    REAL,
+        ch4           REAL,
+        nh3           REAL,
+        hcho          REAL,
+        voc           REAL,
+        odour         REAL,
+        h2s           REAL,
+        etoh          REAL,
+        no2           REAL,
+        co            REAL,
+        smoke         REAL,
+        h2            REAL,
+        temperature   REAL,
+        pressure      REAL,
+        humidity      REAL,
+        altitude      REAL,
+        bme680_gas_resistance REAL,
+        delta_ch4     REAL,
+        delta_nh3     REAL,
+        delta_hcho    REAL,
+        delta_voc     REAL,
+        delta_odour   REAL,
+        delta_h2s     REAL,
+        delta_etoh    REAL,
+        delta_no2     REAL,
+        sync_status   TEXT NOT NULL DEFAULT 'pending',
+        synced_at     INTEGER,
+        tags_json     TEXT,
+        photo_path    TEXT
+      );
+    `);
+    await db.executeSql(`
+      INSERT INTO sensor_records_v2 (
+        id, title, description, walk_id, record_type, recordedAt, latitude, longitude, accuracy_m,
+        ch4, nh3, hcho, voc, odour, h2s, etoh, no2, co, smoke, h2, temperature, pressure, humidity, altitude, bme680_gas_resistance,
+        delta_ch4, delta_nh3, delta_hcho, delta_voc, delta_odour, delta_h2s, delta_etoh, delta_no2, sync_status, synced_at, tags_json, photo_path
+      )
+      SELECT
+        id, title, description, walk_id, record_type, recordedAt, latitude, longitude, accuracy_m,
+        ch4, nh3, hcho, voc, odour, h2s, etoh, no2, co, smoke, h2, temperature, pressure, humidity, altitude, bme680_gas_resistance,
+        delta_ch4, delta_nh3, delta_hcho, delta_voc, delta_odour, delta_h2s, delta_etoh, delta_no2, sync_status, synced_at, tags_json, photo_path
+      FROM sensor_records;
+    `);
+    await db.executeSql('DROP TABLE sensor_records;');
+    await db.executeSql(
+      'ALTER TABLE sensor_records_v2 RENAME TO sensor_records;',
+    );
+    await db.executeSql('COMMIT;');
+  } catch (error) {
+    await db.executeSql('ROLLBACK;');
+    throw error;
+  }
+}
+
 async function getDb(): Promise<SQLite.SQLiteDatabase> {
   if (dbPromise) {
     return dbPromise;
@@ -137,14 +226,14 @@ async function getDb(): Promise<SQLite.SQLiteDatabase> {
         latitude      REAL,
         longitude     REAL,
         accuracy_m    REAL,
-        ch4           REAL NOT NULL DEFAULT 0,
-        nh3           REAL NOT NULL DEFAULT 0,
-        hcho          REAL NOT NULL DEFAULT 0,
-        voc           REAL NOT NULL DEFAULT 0,
-        odour         REAL NOT NULL DEFAULT 0,
-        h2s           REAL NOT NULL DEFAULT 0,
-        etoh          REAL NOT NULL DEFAULT 0,
-        no2           REAL NOT NULL DEFAULT 0,
+        ch4           REAL,
+        nh3           REAL,
+        hcho          REAL,
+        voc           REAL,
+        odour         REAL,
+        h2s           REAL,
+        etoh          REAL,
+        no2           REAL,
         co            REAL,
         smoke         REAL,
         h2            REAL,
@@ -283,6 +372,7 @@ async function getDb(): Promise<SQLite.SQLiteDatabase> {
         'ALTER TABLE sensor_records ADD COLUMN bme680_gas_resistance REAL;',
       );
     } catch {}
+    await migrateSensorRecordsSchemaForNullableChannels(db);
     await db.executeSql(`
       UPDATE sensor_records
       SET walk_id = title
@@ -302,7 +392,7 @@ async function getDb(): Promise<SQLite.SQLiteDatabase> {
       SELECT
         walk_id,
         COALESCE(NULLIF(MIN(description), ''), 'unknown'),
-        COALESCE(NULLIF(MIN(description), ''), 'unknown'),
+        NULL,
         MIN(recordedAt),
         MAX(recordedAt),
         'completed'
@@ -588,6 +678,16 @@ export async function insertCapture(
   row: Omit<CaptureRow, 'syncStatus'>,
 ): Promise<void> {
   const db = await getDb();
+  let resolvedWalkId = row.walkId ?? null;
+  if (!resolvedWalkId && row.sensorRecordId) {
+    const [walkRes] = await db.executeSql(
+      'SELECT walk_id FROM sensor_records WHERE id = ? LIMIT 1;',
+      [row.sensorRecordId],
+    );
+    if (walkRes.rows.length > 0) {
+      resolvedWalkId = walkRes.rows.item(0).walk_id ?? null;
+    }
+  }
   await db.executeSql(
     `INSERT OR REPLACE INTO captures (
       id, sensor_record_id, walk_id, type, local_path, bundle_blob_name,
@@ -595,12 +695,11 @@ export async function insertCapture(
       transcript_json, selected_tags_json, suggested_tags_json, description,
       latitude_display, longitude_display, latitude_raw, longitude_raw,
       captured_at, annotation_index, sync_status
-    ) VALUES (?,?,COALESCE(?, (SELECT walk_id FROM sensor_records WHERE id = ?)),?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'pending');`,
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'pending');`,
     [
       row.id,
       row.sensorRecordId ?? null,
-      row.walkId ?? null,
-      row.sensorRecordId ?? null,
+      resolvedWalkId,
       row.type,
       row.localPath ?? null,
       row.bundleBlobName ?? null,
@@ -850,9 +949,17 @@ function mapAnnotation(r: any): AnnotationRow {
 export async function upsertWalk(row: WalkRow): Promise<void> {
   const db = await getDb();
   await db.executeSql(
-    `INSERT OR REPLACE INTO walks (
+    `INSERT INTO walks (
       id, device_id, device_name, started_at, ended_at, status, app_version, notes
-    ) VALUES (?,?,?,?,?,?,?,?);`,
+    ) VALUES (?,?,?,?,?,?,?,?)
+    ON CONFLICT(id) DO UPDATE SET
+      device_id = excluded.device_id,
+      device_name = COALESCE(excluded.device_name, walks.device_name),
+      started_at = walks.started_at,
+      ended_at = excluded.ended_at,
+      status = excluded.status,
+      app_version = COALESCE(excluded.app_version, walks.app_version),
+      notes = COALESCE(excluded.notes, walks.notes);`,
     [
       row.id,
       row.deviceId,
@@ -871,6 +978,17 @@ export async function completeWalk(id: string, endedAt: number): Promise<void> {
   await db.executeSql(
     "UPDATE walks SET ended_at = ?, status = 'completed' WHERE id = ?;",
     [endedAt, id],
+  );
+}
+
+export async function finalizeInterruptedWalk(
+  id: string,
+  fallbackEndedAt: number,
+): Promise<void> {
+  const db = await getDb();
+  await db.executeSql(
+    "UPDATE walks SET ended_at = COALESCE(ended_at, ?), status = 'completed' WHERE id = ?;",
+    [fallbackEndedAt, id],
   );
 }
 

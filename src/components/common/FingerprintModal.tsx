@@ -157,6 +157,8 @@ export default function FingerprintModal({
       : `${DocumentDirectoryPath}/fingerprint_${Date.now()}.jpg`;
     try {
       if (walkId) {
+        await mkdir(`${DocumentDirectoryPath}/walks`);
+        await mkdir(`${DocumentDirectoryPath}/walks/${walkId}`);
         await mkdir(`${DocumentDirectoryPath}/walks/${walkId}/media`);
       }
       await copyFile(tempPhotoPath, permanentPath);
@@ -215,6 +217,8 @@ export default function FingerprintModal({
       recordingIdRef.current = recordingId;
       const startedAtMs = Date.now();
       if (walkId) {
+        await mkdir(`${DocumentDirectoryPath}/walks`);
+        await mkdir(`${DocumentDirectoryPath}/walks/${walkId}`);
         await mkdir(`${DocumentDirectoryPath}/walks/${walkId}/media`);
         const targetPath = `${DocumentDirectoryPath}/walks/${walkId}/media/${recordingId}.m4a`;
         await copyFile(localUri.replace(/^file:\/\//, ''), targetPath);
