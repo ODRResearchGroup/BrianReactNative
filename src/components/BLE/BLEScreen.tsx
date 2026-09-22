@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import KeepAwake from 'react-native-keep-awake';
 import { useBLE } from '../../BLEUniversal';
+import { SENSOR_DEFINITIONS } from '../../sensors';
 
 const BLELoggerApp = () => {
   const {
@@ -22,49 +23,6 @@ const BLELoggerApp = () => {
 
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
 
-  const notificationSpecs = [
-    {
-      serviceUUID: '0000181a-0000-1000-8000-00805f9b34fb',
-      characteristicUUID: '00002bd1-0000-1000-8000-00805f9b34fb',
-      label: 'Methane',
-    },
-    {
-      serviceUUID: '0000181a-0000-1000-8000-00805f9b34fb',
-      characteristicUUID: '00002bd2-0000-1000-8000-00805f9b34fb',
-      label: 'Nitrogen Dioxide',
-    },
-    {
-      serviceUUID: '0000181a-0000-1000-8000-00805f9b34fb',
-      characteristicUUID: '00002bd3-0000-1000-8000-00805f9b34fb',
-      label: 'Voletile Organic Compounds',
-    },
-    {
-      serviceUUID: '0000181a-0000-1000-8000-00805f9b34fb',
-      characteristicUUID: '00002bcf-0000-1000-8000-00805f9b34fb',
-      label: 'Ammonia',
-    },
-    {
-      serviceUUID: 'de664a17-7db4-449f-97ba-5514e19a9d94',
-      characteristicUUID: '6a135b89-f360-4f64-86fc-5a14092034b4',
-      label: 'Formaldehyde',
-    },
-    {
-      serviceUUID: 'de664a17-7db4-449f-97ba-5514e19a9d94',
-      characteristicUUID: '4c28fcb8-d69b-404a-8668-41655d814e7f',
-      label: 'Odor',
-    },
-    {
-      serviceUUID: 'de664a17-7db4-449f-97ba-5514e19a9d94',
-      characteristicUUID: 'f8156843-6d98-4ba2-8014-1cf03d7dedb8',
-      label: 'Ethanol',
-    },
-    {
-      serviceUUID: 'de664a17-7db4-449f-97ba-5514e19a9d94',
-      characteristicUUID: '87dc71bd-29a4-4218-a2a7-83fd2a69cc40',
-      label: 'Hydrogen Sulfide',
-    },
-  ];
-
   const handleConnect = async () => {
     const selectedDevice = devices.find(
       device => device.id === selectedDeviceId,
@@ -75,6 +33,25 @@ const BLELoggerApp = () => {
 
     try {
       await connectToDevice(selectedDevice);
+      const discoveredPairs = new Set<string>();
+      const services = await selectedDevice.services();
+      for (const service of services) {
+        const characteristics = await service.characteristics();
+        for (const characteristic of characteristics) {
+          discoveredPairs.add(
+            `${service.uuid.toLowerCase()}:${characteristic.uuid.toLowerCase()}`,
+          );
+        }
+      }
+      const notificationSpecs = SENSOR_DEFINITIONS.filter(sensor =>
+        discoveredPairs.has(
+          `${sensor.serviceUUID.toLowerCase()}:${sensor.characteristicUUID.toLowerCase()}`,
+        ),
+      ).map(sensor => ({
+        serviceUUID: sensor.serviceUUID,
+        characteristicUUID: sensor.characteristicUUID,
+        label: sensor.key,
+      }));
       await enableNotifications(selectedDevice, notificationSpecs);
       setSelectedDeviceId(null);
       Alert.alert(

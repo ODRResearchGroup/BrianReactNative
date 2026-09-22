@@ -16,14 +16,22 @@ export type SensorRecord = {
   latitude: number | null;
   longitude: number | null;
   accuracyM?: number | null;
-  ch4: number;
-  nh3: number;
-  hcho: number;
-  voc: number;
-  odour: number;
-  h2s: number;
-  etoh: number;
-  no2: number;
+  ch4: number | null;
+  nh3: number | null;
+  hcho: number | null;
+  voc: number | null;
+  odour: number | null;
+  h2s: number | null;
+  etoh: number | null;
+  no2: number | null;
+  co: number | null;
+  smoke: number | null;
+  h2: number | null;
+  temperatureC: number | null;
+  pressureHPa: number | null;
+  humidityPct: number | null;
+  altitudeM: number | null;
+  gasResistanceOhm: number | null;
   deltaCh4: number | null;
   deltaNh3: number | null;
   deltaHcho: number | null;
@@ -119,6 +127,14 @@ async function getDb(): Promise<SQLite.SQLiteDatabase> {
         h2s           REAL NOT NULL DEFAULT 0,
         etoh          REAL NOT NULL DEFAULT 0,
         no2           REAL NOT NULL DEFAULT 0,
+        co            REAL,
+        smoke         REAL,
+        h2            REAL,
+        temperature_c REAL,
+        pressure_hpa  REAL,
+        humidity_pct  REAL,
+        altitude_m    REAL,
+        gas_resistance_ohm REAL,
         delta_ch4     REAL,
         delta_nh3     REAL,
         delta_hcho    REAL,
@@ -184,6 +200,40 @@ async function getDb(): Promise<SQLite.SQLiteDatabase> {
         'ALTER TABLE sensor_records ADD COLUMN accuracy_m REAL;',
       );
     } catch {}
+    try {
+      await db.executeSql('ALTER TABLE sensor_records ADD COLUMN co REAL;');
+    } catch {}
+    try {
+      await db.executeSql('ALTER TABLE sensor_records ADD COLUMN smoke REAL;');
+    } catch {}
+    try {
+      await db.executeSql('ALTER TABLE sensor_records ADD COLUMN h2 REAL;');
+    } catch {}
+    try {
+      await db.executeSql(
+        'ALTER TABLE sensor_records ADD COLUMN temperature_c REAL;',
+      );
+    } catch {}
+    try {
+      await db.executeSql(
+        'ALTER TABLE sensor_records ADD COLUMN pressure_hpa REAL;',
+      );
+    } catch {}
+    try {
+      await db.executeSql(
+        'ALTER TABLE sensor_records ADD COLUMN humidity_pct REAL;',
+      );
+    } catch {}
+    try {
+      await db.executeSql(
+        'ALTER TABLE sensor_records ADD COLUMN altitude_m REAL;',
+      );
+    } catch {}
+    try {
+      await db.executeSql(
+        'ALTER TABLE sensor_records ADD COLUMN gas_resistance_ohm REAL;',
+      );
+    } catch {}
 
     await db.executeSql(`
       CREATE TABLE IF NOT EXISTS sync_queue (
@@ -213,11 +263,12 @@ export async function insertSensorRecord(
   await db.executeSql(
     `INSERT OR REPLACE INTO sensor_records (
       id, title, description, photo_path, recordedAt, latitude, longitude, accuracy_m,
-      ch4, nh3, hcho, voc, odour, h2s, etoh, no2,
+      ch4, nh3, hcho, voc, odour, h2s, etoh, no2, co, smoke, h2,
+      temperature_c, pressure_hpa, humidity_pct, altitude_m, gas_resistance_ohm,
       delta_ch4, delta_nh3, delta_hcho, delta_voc,
       delta_odour, delta_h2s, delta_etoh, delta_no2,
       sync_status, synced_at
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'pending',NULL);`,
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'pending',NULL);`,
     [
       row.id,
       row.title,
@@ -235,6 +286,14 @@ export async function insertSensorRecord(
       row.h2s,
       row.etoh,
       row.no2,
+      row.co ?? null,
+      row.smoke ?? null,
+      row.h2 ?? null,
+      row.temperatureC ?? null,
+      row.pressureHPa ?? null,
+      row.humidityPct ?? null,
+      row.altitudeM ?? null,
+      row.gasResistanceOhm ?? null,
       row.deltaCh4 ?? null,
       row.deltaNh3 ?? null,
       row.deltaHcho ?? null,
@@ -341,14 +400,22 @@ function mapSensorRecord(r: any): SensorRecord {
     latitude: r.latitude ?? null,
     longitude: r.longitude ?? null,
     accuracyM: r.accuracy_m ?? null,
-    ch4: r.ch4,
-    nh3: r.nh3,
-    hcho: r.hcho,
-    voc: r.voc,
-    odour: r.odour,
-    h2s: r.h2s,
-    etoh: r.etoh,
-    no2: r.no2,
+    ch4: r.ch4 ?? null,
+    nh3: r.nh3 ?? null,
+    hcho: r.hcho ?? null,
+    voc: r.voc ?? null,
+    odour: r.odour ?? null,
+    h2s: r.h2s ?? null,
+    etoh: r.etoh ?? null,
+    no2: r.no2 ?? null,
+    co: r.co ?? null,
+    smoke: r.smoke ?? null,
+    h2: r.h2 ?? null,
+    temperatureC: r.temperature_c ?? null,
+    pressureHPa: r.pressure_hpa ?? null,
+    humidityPct: r.humidity_pct ?? null,
+    altitudeM: r.altitude_m ?? null,
+    gasResistanceOhm: r.gas_resistance_ohm ?? null,
     deltaCh4: r.delta_ch4 ?? null,
     deltaNh3: r.delta_nh3 ?? null,
     deltaHcho: r.delta_hcho ?? null,

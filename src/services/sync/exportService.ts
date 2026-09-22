@@ -119,6 +119,14 @@ export async function exportSmellWalkCsv(walkId: string): Promise<string> {
     'h2s',
     'etoh',
     'no2',
+    'co',
+    'smoke',
+    'h2',
+    'temperature_c',
+    'pressure_hpa',
+    'humidity_pct',
+    'altitude_m',
+    'gas_resistance_ohm',
   ];
   const lines = [
     headers.join(','),
@@ -137,6 +145,14 @@ export async function exportSmellWalkCsv(walkId: string): Promise<string> {
         record.h2s,
         record.etoh,
         record.no2,
+        record.co,
+        record.smoke,
+        record.h2,
+        record.temperatureC,
+        record.pressureHPa,
+        record.humidityPct,
+        record.altitudeM,
+        record.gasResistanceOhm,
       ]
         .map(csvValue)
         .join(','),

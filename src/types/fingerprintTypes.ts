@@ -10,6 +10,14 @@ export type SensorReadings = {
   H2S: number;
   Etoh: number;
   NO2: number;
+  CO?: number;
+  Smoke?: number;
+  H2?: number;
+  TempC?: number;
+  PressureHPa?: number;
+  HumidityPct?: number;
+  AltitudeM?: number;
+  GasResOhm?: number;
 };
 
 // Saved fingerprint data persisted to AsyncStorage

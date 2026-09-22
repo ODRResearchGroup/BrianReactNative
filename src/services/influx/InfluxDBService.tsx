@@ -11,6 +11,7 @@ import Geolocation, { GeoPosition } from 'react-native-geolocation-service';
 import { eventEmitter } from '../../BLEUniversal';
 import { BLEDataUpdated, SensorEvent } from '../../types/events';
 import { insertSensorRecord } from '../database/db';
+import { SENSOR_BY_CHARACTERISTIC_UUID } from '../../sensors';
 
 export type LiveLocation = {
   latitude: number;
@@ -32,17 +33,6 @@ type InfluxDBContextType = {
 const InfluxDBContext = createContext<InfluxDBContextType | undefined>(
   undefined,
 );
-
-const sensorLabelByCharacteristic: Record<string, string> = {
-  '00002bd1-0000-1000-8000-00805f9b34fb': 'Methane',
-  '00002bd2-0000-1000-8000-00805f9b34fb': 'Nitrogen Dioxide',
-  '00002bd3-0000-1000-8000-00805f9b34fb': 'Voletile Organic Compounds',
-  '00002bcf-0000-1000-8000-00805f9b34fb': 'Ammonia',
-  '6a135b89-f360-4f64-86fc-5a14092034b4': 'Formaldehyde',
-  '4c28fcb8-d69b-404a-8668-41655d814e7f': 'Odor',
-  'f8156843-6d98-4ba2-8014-1cf03d7dedb8': 'Ethanol',
-  '87dc71bd-29a4-4218-a2a7-83fd2a69cc40': 'Hydrogen Sulfide',
-};
 
 export const InfluxDBProvider = ({
   children,
@@ -136,12 +126,6 @@ export const InfluxDBProvider = ({
     walkReadingsRef.current = {};
     const currentLocation = latestLocationRef.current;
     try {
-      const valueFor = (names: string[]) => {
-        const entry = Object.entries(readings).find(([name]) =>
-          names.includes(name.toLowerCase()),
-        );
-        return entry?.[1] ?? 0;
-      };
       await insertSensorRecord({
         id: `${currentWalkId}-${Date.now()}`,
         title: currentWalkId,
@@ -152,18 +136,22 @@ export const InfluxDBProvider = ({
         latitude: currentLocation?.latitude ?? null,
         longitude: currentLocation?.longitude ?? null,
         accuracyM: currentLocation?.accuracyM ?? null,
-        ch4: valueFor(['methane', 'ch4']),
-        nh3: valueFor(['ammonia', 'nh3']),
-        hcho: valueFor(['formaldehyde', 'hcho']),
-        voc: valueFor([
-          'voletile organic compounds',
-          'volatile organic compounds',
-          'voc',
-        ]),
-        odour: valueFor(['odor', 'odour']),
-        h2s: valueFor(['hydrogen sulfide', 'hydrogen sulphide', 'h2s']),
-        etoh: valueFor(['ethanol', 'etoh']),
-        no2: valueFor(['nitrogen dioxide', 'no2']),
+        ch4: readings.CH4 ?? null,
+        nh3: readings.NH3 ?? null,
+        hcho: readings.HCHO ?? null,
+        voc: readings.VOC ?? null,
+        odour: readings.Odour ?? null,
+        h2s: readings.H2S ?? null,
+        etoh: readings.Etoh ?? null,
+        no2: readings.NO2 ?? null,
+        co: readings.CO ?? null,
+        smoke: readings.Smoke ?? null,
+        h2: readings.H2 ?? null,
+        temperatureC: readings.TempC ?? null,
+        pressureHPa: readings.PressureHPa ?? null,
+        humidityPct: readings.HumidityPct ?? null,
+        altitudeM: readings.AltitudeM ?? null,
+        gasResistanceOhm: readings.GasResOhm ?? null,
         deltaCh4: null,
         deltaNh3: null,
         deltaHcho: null,
@@ -244,13 +232,16 @@ export const InfluxDBProvider = ({
         deviceId: event.deviceId,
         olfactoryData: {
           readings: {
-            [sensorLabelByCharacteristic[
-              event.characteristicUUID.toLowerCase()
-            ] ?? event.characteristicUUID]:
+            [SENSOR_BY_CHARACTERISTIC_UUID[event.characteristicUUID.toLowerCase()]
+              ?.key ?? event.characteristicUUID]:
               typeof event.decodedValue === 'number' ? event.decodedValue : 0,
           },
           units: {
-            [event.characteristicUUID]: 'ppm', // Adjust based on your sensor
+            [SENSOR_BY_CHARACTERISTIC_UUID[event.characteristicUUID.toLowerCase()]
+              ?.key ?? event.characteristicUUID]:
+              SENSOR_BY_CHARACTERISTIC_UUID[
+                event.characteristicUUID.toLowerCase()
+              ]?.unit ?? 'V',
           },
         },
       };
