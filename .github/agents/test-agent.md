@@ -180,13 +180,13 @@ jest.mock('../influxdb', () => ({
 
 ```typescript
 // __tests__/unit/BLEUniversal.test.tsx
-import {renderHook, act} from '@testing-library/react-hooks';
-import {useBLE, BLEProvider} from '../../BLEUniversal';
+import { renderHook, act } from '@testing-library/react-hooks';
+import { useBLE, BLEProvider } from '../../BLEUniversal';
 
 describe('BLEProvider', () => {
   describe('characteristicValues', () => {
     it('should initialize with empty values', () => {
-      const {result} = renderHook(() => useBLE(), {
+      const { result } = renderHook(() => useBLE(), {
         wrapper: BLEProvider,
       });
 
@@ -194,7 +194,7 @@ describe('BLEProvider', () => {
     });
 
     it('should update when new BLE data arrives', async () => {
-      const {result} = renderHook(() => useBLE(), {
+      const { result } = renderHook(() => useBLE(), {
         wrapper: BLEProvider,
       });
 
@@ -213,22 +213,22 @@ describe('BLEProvider', () => {
 
 ```typescript
 // __tests__/integration/BLEToInfluxDB.test.tsx
-import {renderHook} from '@testing-library/react-hooks';
-import {BLEProvider, eventEmitter} from '../BLEUniversal';
-import {InfluxDBProvider} from '../services/InfluxDBService';
+import { renderHook } from '@testing-library/react-hooks';
+import { BLEProvider, eventEmitter } from '../BLEUniversal';
+import { InfluxDBProvider } from '../services/InfluxDBService';
 
 describe('BLE to InfluxDB Integration', () => {
   it('should upload sensor data when BLE event is emitted', async () => {
     const mockInfluxWrite = jest.fn();
 
     // Setup providers
-    const wrapper = ({children}) => (
+    const wrapper = ({ children }) => (
       <BLEProvider>
         <InfluxDBProvider>{children}</InfluxDBProvider>
       </BLEProvider>
     );
 
-    renderHook(() => {}, {wrapper});
+    renderHook(() => {}, { wrapper });
 
     // Emit BLE event
     eventEmitter.emit('ble_data_updated', {

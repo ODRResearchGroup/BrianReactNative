@@ -141,7 +141,7 @@ module.exports = {
           'index',
         ],
         'newlines-between': 'always',
-        alphabetize: {order: 'asc', caseInsensitive: true},
+        alphabetize: { order: 'asc', caseInsensitive: true },
       },
     ],
     'react-hooks/rules-of-hooks': 'error',
@@ -188,21 +188,21 @@ module.exports = {
 **Before:**
 
 ```typescript
-import {useState} from 'react';
-import {Device} from 'react-native-ble-plx';
-import {useBLE} from '../BLEUniversal';
+import { useState } from 'react';
+import { Device } from 'react-native-ble-plx';
+import { useBLE } from '../BLEUniversal';
 import React from 'react';
-import {View, Text} from 'react-native';
+import { View, Text } from 'react-native';
 ```
 
 **After:**
 
 ```typescript
-import React, {useState} from 'react';
-import {View, Text} from 'react-native';
-import {Device} from 'react-native-ble-plx';
+import React, { useState } from 'react';
+import { View, Text } from 'react-native';
+import { Device } from 'react-native-ble-plx';
 
-import {useBLE} from '../BLEUniversal';
+import { useBLE } from '../BLEUniversal';
 ```
 
 ### Code Formatting
@@ -228,8 +228,8 @@ const myFunction = (param1: string, param2: number) => {
 **Before:**
 
 ```typescript
-import React, {useState, useEffect, useCallback} from 'react';
-import {View, Text, Button, ScrollView} from 'react-native';
+import React, { useState, useEffect, useCallback } from 'react';
+import { View, Text, Button, ScrollView } from 'react-native';
 
 const MyComponent = () => {
   return (
@@ -244,7 +244,7 @@ const MyComponent = () => {
 
 ```typescript
 import React from 'react';
-import {View, Text} from 'react-native';
+import { View, Text } from 'react-native';
 
 const MyComponent = () => {
   return (
@@ -276,20 +276,20 @@ const name = 'User';
 **Before:**
 
 ```typescript
-import {useState} from 'react';
-import type {FC} from 'react';
-import {View} from 'react-native';
-import type {ViewProps} from 'react-native';
+import { useState } from 'react';
+import type { FC } from 'react';
+import { View } from 'react-native';
+import type { ViewProps } from 'react-native';
 ```
 
 **After:**
 
 ```typescript
-import {useState} from 'react';
-import {View} from 'react-native';
+import { useState } from 'react';
+import { View } from 'react-native';
 
-import type {FC} from 'react';
-import type {ViewProps} from 'react-native';
+import type { FC } from 'react';
+import type { ViewProps } from 'react-native';
 ```
 
 ## Safety Checks

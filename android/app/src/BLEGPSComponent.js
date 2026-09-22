@@ -1,6 +1,6 @@
-import React, {useEffect, useState} from 'react';
-import {View, Text, PermissionsAndroid, Platform} from 'react-native';
-import {BleManager} from 'react-native-ble-plx';
+import React, { useEffect, useState } from 'react';
+import { View, Text, PermissionsAndroid, Platform } from 'react-native';
+import { BleManager } from 'react-native-ble-plx';
 import Geolocation from 'react-native-geolocation-service';
 
 const BLEGPSComponent = () => {
@@ -43,7 +43,7 @@ const BLEGPSComponent = () => {
       error => {
         console.error(error);
       },
-      {enableHighAccuracy: true, distanceFilter: 0},
+      { enableHighAccuracy: true, distanceFilter: 0 },
     );
   };
 

@@ -44,6 +44,23 @@ This bundles JavaScript into the APK, so Metro is not required on the phone.
 The generated APK is also available at
 `android/app/build/outputs/apk/release/app-release.apk`.
 
+### Android releases and updates
+
+Merging to `main` runs `.github/workflows/release.yml`. It builds a signed APK,
+publishes it with `version.json` to a GitHub Release, and the Android app checks
+that metadata on launch and resume. The first update requires enabling
+`Allow from this source` for Brian e-Nose in Android settings.
+
+Configure these GitHub Actions secrets before the first release:
+
+- `KEYSTORE_BASE64`: base64-encoded release keystore
+- `KEYSTORE_PASSWORD`: keystore password
+- `KEY_ALIAS`: release key alias
+- `KEY_PASSWORD`: release key password
+
+The same keystore must be used for every release or Android will reject the APK
+as an update to an already-installed app.
+
 On Windows, keep this project in a short, non-OneDrive path such as
 `C:/ODR/BrianReactNative`. React Native's New Architecture and Reanimated use
 CMake paths that exceed Windows' 260-character limit in the current location.
@@ -52,6 +69,10 @@ After moving the project, run `npm install` and then `npm run android:release`.
 ### iOS
 
 For iOS, remember to install CocoaPods dependencies (this only needs to be run on first clone or after updating native deps).
+
+During an active smell walk, the app keeps the screen awake using
+`react-native-keep-awake` on both Android and iOS. This screen-on behavior does
+not require additional iOS `Info.plist` permission keys.
 
 The first time you create a new project, run the Ruby bundler to install CocoaPods itself:
 
