@@ -29,19 +29,14 @@ import {
   Play,
   X,
 } from 'lucide-react-native';
+import { ENV_SENSOR_DEFINITIONS, GAS_SENSOR_DEFINITIONS } from '../../sensors';
 
 type SensorValue = { label: string; value: number };
 
-const mockSensorValues: SensorValue[] = [
-  { label: 'CH4', value: 0.62 },
-  { label: 'NH3', value: 0.38 },
-  { label: 'HCHO', value: 0.76 },
-  { label: 'VOC', value: 0.54 },
-  { label: 'Odour', value: 0.82 },
-  { label: 'H2S', value: 0.29 },
-  { label: 'Etoh', value: 0.68 },
-  { label: 'NO2', value: 0.46 },
-];
+const mockSensorValues: SensorValue[] = GAS_SENSOR_DEFINITIONS.map(sensor => ({
+  label: sensor.chartLabel,
+  value: 0.5,
+}));
 
 export default function SmellWalkScreen() {
   const { characteristicValues, connectedDevice } = useBLE();
@@ -112,20 +107,21 @@ export default function SmellWalkScreen() {
       return mockSensorValues;
     }
 
-    return [
-      { label: 'CH4', value: characteristicValues.Methane || 0 },
-      { label: 'NH3', value: characteristicValues.Ammonia || 0 },
-      { label: 'HCHO', value: characteristicValues.Formaldehyde || 0 },
-      {
-        label: 'VOC',
-        value: characteristicValues['Voletile Organic Compounds'] || 0,
-      },
-      { label: 'Odour', value: characteristicValues.Odor || 0 },
-      { label: 'H2S', value: characteristicValues['Hydrogen Sulfide'] || 0 },
-      { label: 'Etoh', value: characteristicValues.Ethanol || 0 },
-      { label: 'NO2', value: characteristicValues['Nitrogen Dioxide'] || 0 },
-    ];
+    return GAS_SENSOR_DEFINITIONS.map(sensor => ({
+      label: sensor.chartLabel,
+      value: characteristicValues[sensor.key] ?? 0,
+    }));
   }, [characteristicValues]);
+  const environmentalValues = useMemo(
+    () =>
+      ENV_SENSOR_DEFINITIONS.map(sensor => ({
+        key: sensor.key,
+        label: sensor.label,
+        value: characteristicValues[sensor.key],
+        unit: sensor.unit,
+      })),
+    [characteristicValues],
+  );
 
   const radarData = useMemo(
     () => [
@@ -272,6 +268,18 @@ export default function SmellWalkScreen() {
             value={zoomLevel}
             onValueChange={setZoomLevel}
           />
+        </View>
+        <View style={styles.envCard}>
+          <Text style={styles.sectionTitle}>Environmental</Text>
+          {environmentalValues.map(sensor => (
+            <View key={sensor.key} style={styles.envRow}>
+              <Text style={styles.envLabel}>{sensor.label}</Text>
+              <Text style={styles.envValue}>
+                {sensor.value == null ? '—' : sensor.value.toFixed(2)}{' '}
+                {sensor.unit}
+              </Text>
+            </View>
+          ))}
         </View>
 
         <View style={styles.actions}>
@@ -453,6 +461,16 @@ const styles = StyleSheet.create({
     marginTop: 10,
     alignItems: 'center',
   },
+  envCard: {
+    marginTop: 12,
+    gap: 8,
+  },
+  envRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  envLabel: { fontSize: 13, color: '#555' },
+  envValue: { fontSize: 13, color: '#111', fontWeight: '600' },
   slider: { width: '100%', height: 36 },
   sensorGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 },
   sensorCell: {

@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SensorReadings } from '../../types/fingerprintTypes';
+import { SENSOR_DEFINITIONS } from '../../sensors';
 
 export type BaselineData = {
   readings: SensorReadings;
@@ -72,16 +73,25 @@ export const BaselineProvider: React.FC<{ children: React.ReactNode }> = ({
       return currentReadings; // No baseline, return raw
     }
 
-    return {
-      CH4: currentReadings.CH4 - baseline.readings.CH4,
-      NH3: currentReadings.NH3 - baseline.readings.NH3,
-      HCHO: currentReadings.HCHO - baseline.readings.HCHO,
-      VOC: currentReadings.VOC - baseline.readings.VOC,
-      Odour: currentReadings.Odour - baseline.readings.Odour,
-      H2S: currentReadings.H2S - baseline.readings.H2S,
-      Etoh: currentReadings.Etoh - baseline.readings.Etoh,
-      NO2: currentReadings.NO2 - baseline.readings.NO2,
+    const subtract = (
+      current: number | null | undefined,
+      base: number | null | undefined,
+    ): number | null => {
+      if (typeof current !== 'number' || typeof base !== 'number') {
+        return null;
+      }
+      return current - base;
     };
+
+    return Object.fromEntries(
+      SENSOR_DEFINITIONS.map(sensor => [
+        sensor.key,
+        subtract(
+          currentReadings[sensor.key as keyof SensorReadings],
+          baseline.readings[sensor.key as keyof SensorReadings],
+        ),
+      ]),
+    ) as SensorReadings;
   };
 
   return (

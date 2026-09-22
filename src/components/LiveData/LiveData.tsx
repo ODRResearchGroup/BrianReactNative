@@ -30,6 +30,12 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SensorEvent, emitter } from '../../types/events';
 import { Alert } from 'react-native';
 import Svg, { Path, Line, Rect } from 'react-native-svg';
+import {
+  ENV_SENSOR_DEFINITIONS,
+  GAS_SENSOR_DEFINITIONS,
+  GasSensorKey,
+  SENSOR_DEFINITIONS,
+} from '../../sensors';
 
 const { width } = Dimensions.get('window');
 
@@ -37,16 +43,6 @@ const { width } = Dimensions.get('window');
 const PLOT_HISTORY_SIZE = 30; // 30 seconds
 const PLOT_WIDTH = width - 80;
 const PLOT_HEIGHT = 150;
-
-type SensorKey =
-  | 'CH4'
-  | 'NH3'
-  | 'HCHO'
-  | 'VOC'
-  | 'Odour'
-  | 'H2S'
-  | 'Etoh'
-  | 'NO2';
 
 interface PlotPoint {
   time: number;
@@ -57,15 +53,6 @@ export default function LiveData() {
   const { characteristicValues, connectedDevice } = useBLE();
   const navigation = useNavigation<NavigationProp<{ Device: undefined }>>();
   const [isConnected, setIsConnected] = useState(__DEV__);
-
-  const methane = characteristicValues.Methane || 0;
-  const ammonia = characteristicValues.Ammonia || 0;
-  const formaldehyde = characteristicValues.Formaldehyde || 0;
-  const voc = characteristicValues['Voletile Organic Compounds'] || 0;
-  const odour = characteristicValues.Odor || 0;
-  const hydrogenSulfide = characteristicValues['Hydrogen Sulfide'] || 0;
-  const ethanol = characteristicValues.Ethanol || 0;
-  const nitrogenDioxide = characteristicValues['Nitrogen Dioxide'] || 0;
 
   const [showFingerprintModal, setShowFingerprintModal] = useState(false);
   const [showTimeBar, setShowTimeBar] = useState(false);
@@ -82,19 +69,12 @@ export default function LiveData() {
   const [zoomLevel, setZoomLevel] = useState(0.1);
 
   // Mini plotter state
-  const [selectedSensor, setSelectedSensor] = useState<SensorKey | null>(null);
+  const [selectedSensor, setSelectedSensor] = useState<GasSensorKey | null>(
+    null,
+  );
   const [plotHistory, setPlotHistory] = useState<
-    Record<SensorKey, PlotPoint[]>
-  >({
-    CH4: [],
-    NH3: [],
-    HCHO: [],
-    VOC: [],
-    Odour: [],
-    H2S: [],
-    Etoh: [],
-    NO2: [],
-  });
+    Record<GasSensorKey, PlotPoint[]>
+  >(() => ({} as Record<GasSensorKey, PlotPoint[]>));
   const startTimeRef = useRef<number>(Date.now());
 
   useFocusEffect(
@@ -121,27 +101,25 @@ export default function LiveData() {
     }, [connectedDevice]),
   );
 
-  const currentValues = useMemo<Record<SensorKey, number>>(
-    () => ({
-      CH4: methane,
-      NH3: ammonia,
-      HCHO: formaldehyde,
-      VOC: voc,
-      Odour: odour,
-      H2S: hydrogenSulfide,
-      Etoh: ethanol,
-      NO2: nitrogenDioxide,
-    }),
-    [
-      methane,
-      ammonia,
-      formaldehyde,
-      voc,
-      odour,
-      hydrogenSulfide,
-      ethanol,
-      nitrogenDioxide,
-    ],
+  const currentValues = useMemo<Record<GasSensorKey, number>>(
+    () =>
+      Object.fromEntries(
+        GAS_SENSOR_DEFINITIONS.map(sensor => [
+          sensor.key,
+          characteristicValues[sensor.key] ?? 0,
+        ]),
+      ) as Record<GasSensorKey, number>,
+    [characteristicValues],
+  );
+  const environmentalValues = useMemo(
+    () =>
+      ENV_SENSOR_DEFINITIONS.map(sensor => ({
+        key: sensor.key,
+        label: sensor.label,
+        unit: sensor.unit,
+        value: characteristicValues[sensor.key],
+      })),
+    [characteristicValues],
   );
 
   // Update plot history
@@ -152,13 +130,13 @@ export default function LiveData() {
     setPlotHistory(prev => {
       const updated = { ...prev };
 
-      (Object.keys(currentValues) as SensorKey[]).forEach(key => {
+      (Object.keys(currentValues) as GasSensorKey[]).forEach(key => {
         const newPoint: PlotPoint = {
           time: elapsedSeconds,
           value: currentValues[key],
         };
 
-        const points = [...prev[key], newPoint];
+        const points = [...(prev[key] ?? []), newPoint];
         // Keep last PLOT_HISTORY_SIZE points
         updated[key] = points.slice(-PLOT_HISTORY_SIZE);
       });
@@ -169,26 +147,12 @@ export default function LiveData() {
 
   const radarData = useMemo(
     () =>
-      [
-        { label: 'Ch4', key: 'CH4' as SensorKey, value: methane },
-        { label: 'NH3', key: 'NH3' as SensorKey, value: ammonia },
-        { label: 'HCHO', key: 'HCHO' as SensorKey, value: formaldehyde },
-        { label: 'VOC', key: 'VOC' as SensorKey, value: voc },
-        { label: 'Odour', key: 'Odour' as SensorKey, value: odour },
-        { label: 'H2S', key: 'H2S' as SensorKey, value: hydrogenSulfide },
-        { label: 'Etoh', key: 'Etoh' as SensorKey, value: ethanol },
-        { label: 'No2', key: 'NO2' as SensorKey, value: nitrogenDioxide },
-      ].filter(item => !isNaN(item.value)),
-    [
-      methane,
-      ammonia,
-      formaldehyde,
-      voc,
-      odour,
-      hydrogenSulfide,
-      ethanol,
-      nitrogenDioxide,
-    ],
+      GAS_SENSOR_DEFINITIONS.map(sensor => ({
+        label: sensor.chartLabel,
+        key: sensor.key as GasSensorKey,
+        value: currentValues[sensor.key as GasSensorKey] ?? 0,
+      })).filter(item => !isNaN(item.value)),
+    [currentValues],
   );
 
   const chartData = [
@@ -203,16 +167,13 @@ export default function LiveData() {
     },
   ];
 
-  const getCurrentReadings = (): SensorReadings => ({
-    CH4: methane,
-    NH3: ammonia,
-    HCHO: formaldehyde,
-    VOC: voc,
-    Odour: odour,
-    H2S: hydrogenSulfide,
-    Etoh: ethanol,
-    NO2: nitrogenDioxide,
-  });
+  const getCurrentReadings = (): SensorReadings =>
+    Object.fromEntries(
+      SENSOR_DEFINITIONS.map(sensor => [
+        sensor.key,
+        characteristicValues[sensor.key] ?? null,
+      ]),
+    );
 
   const startSampling = (
     mode: 'fingerprint',
@@ -262,30 +223,24 @@ export default function LiveData() {
       return null;
     }
 
-    const sum = samples.reduce(
-      (accumulated, sample) => ({
-        CH4: accumulated.CH4 + sample.CH4,
-        NH3: accumulated.NH3 + sample.NH3,
-        HCHO: accumulated.HCHO + sample.HCHO,
-        VOC: accumulated.VOC + sample.VOC,
-        Odour: accumulated.Odour + sample.Odour,
-        H2S: accumulated.H2S + sample.H2S,
-        Etoh: accumulated.Etoh + sample.Etoh,
-        NO2: accumulated.NO2 + sample.NO2,
-      }),
-      { CH4: 0, NH3: 0, HCHO: 0, VOC: 0, Odour: 0, H2S: 0, Etoh: 0, NO2: 0 },
-    );
+    const sums: Record<string, number> = {};
+    const counts: Record<string, number> = {};
+    for (const sample of samples) {
+      for (const sensor of SENSOR_DEFINITIONS) {
+        const value = sample[sensor.key as keyof SensorReadings];
+        if (typeof value === 'number' && !Number.isNaN(value)) {
+          sums[sensor.key] = (sums[sensor.key] ?? 0) + value;
+          counts[sensor.key] = (counts[sensor.key] ?? 0) + 1;
+        }
+      }
+    }
 
-    const avg: SensorReadings = {
-      CH4: sum.CH4 / samples.length,
-      NH3: sum.NH3 / samples.length,
-      HCHO: sum.HCHO / samples.length,
-      VOC: sum.VOC / samples.length,
-      Odour: sum.Odour / samples.length,
-      H2S: sum.H2S / samples.length,
-      Etoh: sum.Etoh / samples.length,
-      NO2: sum.NO2 / samples.length,
-    };
+    const avg = Object.fromEntries(
+      SENSOR_DEFINITIONS.map(sensor => [
+        sensor.key,
+        counts[sensor.key] ? sums[sensor.key] / counts[sensor.key] : null,
+      ]),
+    ) as SensorReadings;
 
     samplingRef.current.samples = [];
     setSamplingMode('idle');
@@ -303,16 +258,9 @@ export default function LiveData() {
         source: 'BLE Device',
         olfactoryData: {
           readings: avg,
-          units: {
-            CH4: 'V',
-            NH3: 'V',
-            HCHO: 'V',
-            VOC: 'V',
-            Odour: 'V',
-            H2S: 'V',
-            Etoh: 'V',
-            NO2: 'V',
-          },
+          units: Object.fromEntries(
+            SENSOR_DEFINITIONS.map(sensor => [sensor.key, sensor.unit]),
+          ),
         },
       } as any;
 
@@ -341,7 +289,7 @@ export default function LiveData() {
   };
 
   // Generate mini plot path with DYNAMIC scale per sensor + 20% headroom
-  const generateMiniPlot = (sensorKey: SensorKey): string => {
+  const generateMiniPlot = (sensorKey: GasSensorKey): string => {
     const points = plotHistory[sensorKey];
     if (points.length < 2) {
       return '';
@@ -435,6 +383,17 @@ export default function LiveData() {
                 <Text style={styles.sensorValue}>{item.value.toFixed(4)}</Text>
                 <Text style={styles.tapHint}>Tap for plot</Text>
               </Pressable>
+            ))}
+          </View>
+          <View style={styles.envSection}>
+            <Text style={styles.envTitle}>Environmental</Text>
+            {environmentalValues.map(item => (
+              <View key={item.key} style={styles.envRow}>
+                <Text style={styles.envLabel}>{item.label}</Text>
+                <Text style={styles.envValue}>
+                  {item.value == null ? '—' : item.value.toFixed(2)} {item.unit}
+                </Text>
+              </View>
             ))}
           </View>
         </View>
@@ -572,6 +531,29 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: '#999',
     fontStyle: 'italic',
+  },
+  envSection: {
+    width: '100%',
+    marginTop: 16,
+    gap: 8,
+  },
+  envTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#333',
+  },
+  envRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  envLabel: {
+    fontSize: 13,
+    color: '#555',
+  },
+  envValue: {
+    fontSize: 13,
+    color: '#111',
+    fontWeight: '600',
   },
   analyseButton: {
     paddingHorizontal: 24,

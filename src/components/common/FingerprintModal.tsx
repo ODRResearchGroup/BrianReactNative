@@ -16,28 +16,16 @@ import {
 } from 'react-native';
 import CustomRadarChart from './CustomRadarChart';
 import Slider from '@react-native-community/slider';
+import {
+  ENV_SENSOR_DEFINITIONS,
+  GAS_SENSOR_DEFINITIONS,
+  SensorKey,
+  SENSOR_DEFINITIONS,
+} from '../../sensors';
 
 const { width } = Dimensions.get('window');
-const SENSOR_ORDER = [
-  'CH4',
-  'NH3',
-  'HCHO',
-  'VOC',
-  'Odour',
-  'H2S',
-  'Etoh',
-  'NO2',
-];
-const SENSOR_LABELS = [
-  'Ch4',
-  'NH3',
-  'HCHO',
-  'VOC',
-  'Odour',
-  'H2S',
-  'Etoh',
-  'No2',
-];
+const SENSOR_ORDER = GAS_SENSOR_DEFINITIONS.map(sensor => sensor.key);
+const SENSOR_LABELS = GAS_SENSOR_DEFINITIONS.map(sensor => sensor.chartLabel);
 import AudioRecorderPlayer from 'react-native-audio-recorder-player';
 import { useBLE } from '../../BLEUniversal';
 import { DocumentDirectoryPath, copyFile } from 'react-native-fs';
@@ -85,6 +73,14 @@ const developmentReadings: SensorReadings = {
   H2S: 0.29,
   Etoh: 0.68,
   NO2: 0.46,
+  CO: 0.51,
+  Smoke: 0.49,
+  H2: 0.47,
+  TempC: 21.5,
+  PressureHPa: 1011.2,
+  HumidityPct: 43.2,
+  AltitudeM: 12.3,
+  GasResOhm: 1412,
 };
 
 export default function FingerprintModal({
@@ -115,16 +111,12 @@ export default function FingerprintModal({
     const readings =
       __DEV__ && !hasSensorReadings
         ? developmentReadings
-        : {
-            CH4: characteristicValues.Methane || 0,
-            NH3: characteristicValues.Ammonia || 0,
-            HCHO: characteristicValues.Formaldehyde || 0,
-            VOC: characteristicValues['Voletile Organic Compounds'] || 0,
-            Odour: characteristicValues.Odor || 0,
-            H2S: characteristicValues['Hydrogen Sulfide'] || 0,
-            Etoh: characteristicValues.Ethanol || 0,
-            NO2: characteristicValues['Nitrogen Dioxide'] || 0,
-          };
+        : (Object.fromEntries(
+            SENSOR_DEFINITIONS.map(sensor => [
+              sensor.key,
+              characteristicValues[sensor.key] ?? null,
+            ]),
+          ) as SensorReadings);
 
     return {
       type: 'sensor_reading',
@@ -132,16 +124,9 @@ export default function FingerprintModal({
       source: 'BLE Device',
       olfactoryData: {
         readings,
-        units: {
-          CH4: 'ppm',
-          NH3: 'ppm',
-          HCHO: 'ppm',
-          VOC: 'ppm',
-          Odour: 'a.u.',
-          H2S: 'ppm',
-          Etoh: 'ppm',
-          NO2: 'ppm',
-        },
+        units: Object.fromEntries(
+          SENSOR_DEFINITIONS.map(sensor => [sensor.key, sensor.unit]),
+        ),
       },
     };
   }, [characteristicValues]);
@@ -327,6 +312,14 @@ export default function FingerprintModal({
         h2s: r.H2S,
         etoh: r.Etoh,
         no2: r.NO2,
+        co: r.CO ?? null,
+        smoke: r.Smoke ?? null,
+        h2: r.H2 ?? null,
+        temperatureC: r.TempC ?? null,
+        pressureHPa: r.PressureHPa ?? null,
+        humidityPct: r.HumidityPct ?? null,
+        altitudeM: r.AltitudeM ?? null,
+        gasResistanceOhm: r.GasResOhm ?? null,
         deltaCh4: null,
         deltaNh3: null,
         deltaHcho: null,
@@ -562,7 +555,8 @@ export default function FingerprintModal({
               {/* Radar Chart */}
               {capturedFingerprint &&
                 (() => {
-                  const r = capturedFingerprint.olfactoryData?.readings ?? {};
+                  const r = (capturedFingerprint.olfactoryData?.readings ??
+                    {}) as SensorReadings;
                   const radarData = SENSOR_ORDER.map((key, idx) => ({
                     x: SENSOR_LABELS[idx],
                     y: Number((r as any)[key]) || 0,
@@ -599,6 +593,21 @@ export default function FingerprintModal({
                       <Text style={styles.sliderLabel}>
                         Zoom: {zoomLevel.toFixed(1)}×
                       </Text>
+                      <View style={styles.envSection}>
+                        {ENV_SENSOR_DEFINITIONS.map(sensor => (
+                          <View key={sensor.key} style={styles.envRow}>
+                            <Text style={styles.envLabel}>{sensor.label}</Text>
+                            <Text style={styles.envValue}>
+                              {r[sensor.key as SensorKey] == null
+                                ? '—'
+                                : Number(r[sensor.key as SensorKey]).toFixed(
+                                    2,
+                                  )}{' '}
+                              {sensor.unit}
+                            </Text>
+                          </View>
+                        ))}
+                      </View>
                     </View>
                   );
                 })()}
@@ -761,4 +770,8 @@ const styles = StyleSheet.create({
   modalContent: { flex: 1, backgroundColor: '#fff' },
   slider: { width: '80%', height: 40, marginTop: 8 },
   sliderLabel: { fontSize: 12, color: '#666', marginTop: 2 },
+  envSection: { width: '100%', marginTop: 10, gap: 6 },
+  envRow: { flexDirection: 'row', justifyContent: 'space-between' },
+  envLabel: { fontSize: 12, color: '#555' },
+  envValue: { fontSize: 12, color: '#111', fontWeight: '600' },
 });

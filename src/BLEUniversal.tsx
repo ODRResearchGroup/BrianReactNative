@@ -16,13 +16,13 @@ type BLEContextType = {
   connectedDevice: Device | null;
   characteristicValues: { [key: string]: number };
   scanForDevices: () => void;
-  connectToDevice: (device: Device) => Promise<void>;
+  connectToDevice: (device: Device) => Promise<Device>;
   enableNotifications: (
     device: Device,
     characteristics: {
       serviceUUID: string;
       characteristicUUID: string;
-      label: string;
+      sensorKey: string;
     }[],
   ) => Promise<void>;
   eventEmitter: AppEventEmitter;
@@ -100,16 +100,17 @@ export const BLEProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   // Connect to a device
-  const connectToDevice = async (device: Device) => {
+  const connectToDevice = async (device: Device): Promise<Device> => {
     try {
-      await device.connect();
-      await device.discoverAllServicesAndCharacteristics();
-      await device.requestMTU(256);
+      const connected = await device.connect();
+      const discovered =
+        await connected.discoverAllServicesAndCharacteristics();
+      await discovered.requestMTU(256);
 
-      setConnectedDevice(device);
-      console.log('Connected to', device.name || 'Unnamed Device');
+      setConnectedDevice(discovered);
+      console.log('Connected to', discovered.name || 'Unnamed Device');
 
-      const services = await device.services();
+      const services = await discovered.services();
       for (const service of services) {
         console.log(`Service UUID: ${service.uuid}`);
         const characteristics = await service.characteristics();
@@ -117,8 +118,10 @@ export const BLEProvider = ({ children }: { children: React.ReactNode }) => {
           console.log(`  Characteristic UUID: ${characteristic.uuid}`);
         }
       }
+      return discovered;
     } catch (error) {
       console.error('Connection error:', error);
+      throw error;
     }
   };
 
@@ -128,13 +131,17 @@ export const BLEProvider = ({ children }: { children: React.ReactNode }) => {
     characteristics: {
       serviceUUID: string;
       characteristicUUID: string;
-      label: string;
+      sensorKey: string;
     }[],
   ) => {
-    for (const { serviceUUID, characteristicUUID, label } of characteristics) {
+    for (const {
+      serviceUUID,
+      characteristicUUID,
+      sensorKey,
+    } of characteristics) {
       console.log(
         'Enabling notification for',
-        label,
+        sensorKey,
         serviceUUID,
         characteristicUUID,
       );
@@ -194,7 +201,7 @@ export const BLEProvider = ({ children }: { children: React.ReactNode }) => {
             // Update local state for UI - store raw value directly
             setCharacteristicValues(prev => ({
               ...prev,
-              [label]: voltageValue,
+              [sensorKey]: voltageValue,
             }));
 
             // Emit BLE data updated event for InfluxDB integration
@@ -211,7 +218,7 @@ export const BLEProvider = ({ children }: { children: React.ReactNode }) => {
 
             eventEmitter.emit('ble_data_updated', bleEvent);
 
-            console.log(`${label}: ${voltageValue}`);
+            console.log(`${sensorKey}: ${voltageValue}`);
           },
         );
       } catch (error) {
