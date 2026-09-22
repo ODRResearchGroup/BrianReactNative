@@ -111,12 +111,12 @@ export default function FingerprintModal({
     const readings =
       __DEV__ && !hasSensorReadings
         ? developmentReadings
-        : Object.fromEntries(
+        : (Object.fromEntries(
             SENSOR_DEFINITIONS.map(sensor => [
               sensor.key,
               characteristicValues[sensor.key] ?? null,
             ]),
-          );
+          ) as SensorReadings);
 
     return {
       type: 'sensor_reading',
@@ -124,24 +124,9 @@ export default function FingerprintModal({
       source: 'BLE Device',
       olfactoryData: {
         readings,
-        units: {
-          CH4: 'ppm',
-          NH3: 'ppm',
-          HCHO: 'ppm',
-          VOC: 'ppm',
-          Odour: 'a.u.',
-          H2S: 'ppm',
-          Etoh: 'ppm',
-          NO2: 'ppm',
-          CO: 'V',
-          Smoke: 'V',
-          H2: 'V',
-          TempC: '°C',
-          PressureHPa: 'hPa',
-          HumidityPct: '%',
-          AltitudeM: 'm',
-          GasResOhm: 'Ω',
-        },
+        units: Object.fromEntries(
+          SENSOR_DEFINITIONS.map(sensor => [sensor.key, sensor.unit]),
+        ),
       },
     };
   }, [characteristicValues]);
