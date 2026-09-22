@@ -50,7 +50,7 @@ const BLELoggerApp = () => {
       ).map(sensor => ({
         serviceUUID: sensor.serviceUUID,
         characteristicUUID: sensor.characteristicUUID,
-        label: sensor.key,
+        sensorKey: sensor.key,
       }));
       await enableNotifications(connectedDeviceInstance, notificationSpecs);
       setSelectedDeviceId(null);

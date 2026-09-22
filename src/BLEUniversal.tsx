@@ -22,7 +22,7 @@ type BLEContextType = {
     characteristics: {
       serviceUUID: string;
       characteristicUUID: string;
-      label: string;
+      sensorKey: string;
     }[],
   ) => Promise<void>;
   eventEmitter: AppEventEmitter;
@@ -131,13 +131,17 @@ export const BLEProvider = ({ children }: { children: React.ReactNode }) => {
     characteristics: {
       serviceUUID: string;
       characteristicUUID: string;
-      label: string;
+      sensorKey: string;
     }[],
   ) => {
-    for (const { serviceUUID, characteristicUUID, label } of characteristics) {
+    for (const {
+      serviceUUID,
+      characteristicUUID,
+      sensorKey,
+    } of characteristics) {
       console.log(
         'Enabling notification for',
-        label,
+        sensorKey,
         serviceUUID,
         characteristicUUID,
       );
@@ -197,7 +201,7 @@ export const BLEProvider = ({ children }: { children: React.ReactNode }) => {
             // Update local state for UI - store raw value directly
             setCharacteristicValues(prev => ({
               ...prev,
-              [label]: voltageValue,
+              [sensorKey]: voltageValue,
             }));
 
             // Emit BLE data updated event for InfluxDB integration
@@ -214,7 +218,7 @@ export const BLEProvider = ({ children }: { children: React.ReactNode }) => {
 
             eventEmitter.emit('ble_data_updated', bleEvent);
 
-            console.log(`${label}: ${voltageValue}`);
+            console.log(`${sensorKey}: ${voltageValue}`);
           },
         );
       } catch (error) {
