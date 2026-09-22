@@ -34,7 +34,7 @@ export const SENSOR_DEFINITIONS = [
   },
   {
     key: 'VOC',
-    label: 'Voletile Organic Compounds',
+    label: 'Volatile Organic Compounds',
     chartLabel: 'VOC',
     serviceUUID: ESS_SERVICE_UUID,
     characteristicUUID: '00002bd3-0000-1000-8000-00805f9b34fb',
