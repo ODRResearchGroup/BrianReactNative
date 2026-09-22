@@ -34,6 +34,7 @@ import {
   ENV_SENSOR_DEFINITIONS,
   GAS_SENSOR_DEFINITIONS,
   GasSensorKey,
+  SENSOR_DEFINITIONS,
 } from '../../sensors';
 
 const { width } = Dimensions.get('window');
@@ -166,24 +167,13 @@ export default function LiveData() {
     },
   ];
 
-  const getCurrentReadings = (): SensorReadings => ({
-    CH4: characteristicValues.CH4 ?? 0,
-    NH3: characteristicValues.NH3 ?? 0,
-    HCHO: characteristicValues.HCHO ?? 0,
-    VOC: characteristicValues.VOC ?? 0,
-    Odour: characteristicValues.Odour ?? 0,
-    H2S: characteristicValues.H2S ?? 0,
-    Etoh: characteristicValues.Etoh ?? 0,
-    NO2: characteristicValues.NO2 ?? 0,
-    CO: characteristicValues.CO ?? 0,
-    Smoke: characteristicValues.Smoke ?? 0,
-    H2: characteristicValues.H2 ?? 0,
-    TempC: characteristicValues.TempC ?? 0,
-    PressureHPa: characteristicValues.PressureHPa ?? 0,
-    HumidityPct: characteristicValues.HumidityPct ?? 0,
-    AltitudeM: characteristicValues.AltitudeM ?? 0,
-    GasResOhm: characteristicValues.GasResOhm ?? 0,
-  });
+  const getCurrentReadings = (): SensorReadings =>
+    Object.fromEntries(
+      SENSOR_DEFINITIONS.map(sensor => [
+        sensor.key,
+        characteristicValues[sensor.key] ?? null,
+      ]),
+    );
 
   const startSampling = (
     mode: 'fingerprint',
@@ -233,63 +223,24 @@ export default function LiveData() {
       return null;
     }
 
-    const sum = samples.reduce(
-      (accumulated, sample) => ({
-        CH4: accumulated.CH4 + sample.CH4,
-        NH3: accumulated.NH3 + sample.NH3,
-        HCHO: accumulated.HCHO + sample.HCHO,
-        VOC: accumulated.VOC + sample.VOC,
-        Odour: accumulated.Odour + sample.Odour,
-        H2S: accumulated.H2S + sample.H2S,
-        Etoh: accumulated.Etoh + sample.Etoh,
-        NO2: accumulated.NO2 + sample.NO2,
-        CO: (accumulated.CO ?? 0) + (sample.CO ?? 0),
-        Smoke: (accumulated.Smoke ?? 0) + (sample.Smoke ?? 0),
-        H2: (accumulated.H2 ?? 0) + (sample.H2 ?? 0),
-        TempC: (accumulated.TempC ?? 0) + (sample.TempC ?? 0),
-        PressureHPa: (accumulated.PressureHPa ?? 0) + (sample.PressureHPa ?? 0),
-        HumidityPct: (accumulated.HumidityPct ?? 0) + (sample.HumidityPct ?? 0),
-        AltitudeM: (accumulated.AltitudeM ?? 0) + (sample.AltitudeM ?? 0),
-        GasResOhm: (accumulated.GasResOhm ?? 0) + (sample.GasResOhm ?? 0),
-      }),
-      {
-        CH4: 0,
-        NH3: 0,
-        HCHO: 0,
-        VOC: 0,
-        Odour: 0,
-        H2S: 0,
-        Etoh: 0,
-        NO2: 0,
-        CO: 0,
-        Smoke: 0,
-        H2: 0,
-        TempC: 0,
-        PressureHPa: 0,
-        HumidityPct: 0,
-        AltitudeM: 0,
-        GasResOhm: 0,
-      },
-    );
+    const sums: Record<string, number> = {};
+    const counts: Record<string, number> = {};
+    for (const sample of samples) {
+      for (const sensor of SENSOR_DEFINITIONS) {
+        const value = sample[sensor.key as keyof SensorReadings];
+        if (typeof value === 'number' && !Number.isNaN(value)) {
+          sums[sensor.key] = (sums[sensor.key] ?? 0) + value;
+          counts[sensor.key] = (counts[sensor.key] ?? 0) + 1;
+        }
+      }
+    }
 
-    const avg: SensorReadings = {
-      CH4: sum.CH4 / samples.length,
-      NH3: sum.NH3 / samples.length,
-      HCHO: sum.HCHO / samples.length,
-      VOC: sum.VOC / samples.length,
-      Odour: sum.Odour / samples.length,
-      H2S: sum.H2S / samples.length,
-      Etoh: sum.Etoh / samples.length,
-      NO2: sum.NO2 / samples.length,
-      CO: (sum.CO ?? 0) / samples.length,
-      Smoke: (sum.Smoke ?? 0) / samples.length,
-      H2: (sum.H2 ?? 0) / samples.length,
-      TempC: (sum.TempC ?? 0) / samples.length,
-      PressureHPa: (sum.PressureHPa ?? 0) / samples.length,
-      HumidityPct: (sum.HumidityPct ?? 0) / samples.length,
-      AltitudeM: (sum.AltitudeM ?? 0) / samples.length,
-      GasResOhm: (sum.GasResOhm ?? 0) / samples.length,
-    };
+    const avg = Object.fromEntries(
+      SENSOR_DEFINITIONS.map(sensor => [
+        sensor.key,
+        counts[sensor.key] ? sums[sensor.key] / counts[sensor.key] : null,
+      ]),
+    ) as SensorReadings;
 
     samplingRef.current.samples = [];
     setSamplingMode('idle');

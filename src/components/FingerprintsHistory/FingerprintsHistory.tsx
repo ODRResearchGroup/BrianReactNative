@@ -27,14 +27,14 @@ function recordToLegacy(record: SensorRecord): SavedFingerprintData {
       source: 'BLE Device',
       olfactoryData: {
         readings: {
-          CH4: record.ch4 ?? 0,
-          NH3: record.nh3 ?? 0,
-          HCHO: record.hcho ?? 0,
-          VOC: record.voc ?? 0,
-          Odour: record.odour ?? 0,
-          H2S: record.h2s ?? 0,
-          Etoh: record.etoh ?? 0,
-          NO2: record.no2 ?? 0,
+          CH4: record.ch4,
+          NH3: record.nh3,
+          HCHO: record.hcho,
+          VOC: record.voc,
+          Odour: record.odour,
+          H2S: record.h2s,
+          Etoh: record.etoh,
+          NO2: record.no2,
         },
         units: {
           CH4: 'ppm',

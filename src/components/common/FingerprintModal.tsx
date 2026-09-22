@@ -16,7 +16,11 @@ import {
 } from 'react-native';
 import CustomRadarChart from './CustomRadarChart';
 import Slider from '@react-native-community/slider';
-import { ENV_SENSOR_DEFINITIONS, GAS_SENSOR_DEFINITIONS } from '../../sensors';
+import {
+  ENV_SENSOR_DEFINITIONS,
+  GAS_SENSOR_DEFINITIONS,
+  SENSOR_DEFINITIONS,
+} from '../../sensors';
 
 const { width } = Dimensions.get('window');
 const SENSOR_ORDER = GAS_SENSOR_DEFINITIONS.map(sensor => sensor.key);
@@ -106,24 +110,12 @@ export default function FingerprintModal({
     const readings =
       __DEV__ && !hasSensorReadings
         ? developmentReadings
-        : {
-            CH4: characteristicValues.CH4 ?? 0,
-            NH3: characteristicValues.NH3 ?? 0,
-            HCHO: characteristicValues.HCHO ?? 0,
-            VOC: characteristicValues.VOC ?? 0,
-            Odour: characteristicValues.Odour ?? 0,
-            H2S: characteristicValues.H2S ?? 0,
-            Etoh: characteristicValues.Etoh ?? 0,
-            NO2: characteristicValues.NO2 ?? 0,
-            CO: characteristicValues.CO ?? 0,
-            Smoke: characteristicValues.Smoke ?? 0,
-            H2: characteristicValues.H2 ?? 0,
-            TempC: characteristicValues.TempC ?? 0,
-            PressureHPa: characteristicValues.PressureHPa ?? 0,
-            HumidityPct: characteristicValues.HumidityPct ?? 0,
-            AltitudeM: characteristicValues.AltitudeM ?? 0,
-            GasResOhm: characteristicValues.GasResOhm ?? 0,
-          };
+        : Object.fromEntries(
+            SENSOR_DEFINITIONS.map(sensor => [
+              sensor.key,
+              characteristicValues[sensor.key] ?? null,
+            ]),
+          );
 
     return {
       type: 'sensor_reading',

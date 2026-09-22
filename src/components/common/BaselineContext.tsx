@@ -72,15 +72,25 @@ export const BaselineProvider: React.FC<{ children: React.ReactNode }> = ({
       return currentReadings; // No baseline, return raw
     }
 
+    const subtract = (
+      current: number | null | undefined,
+      base: number | null | undefined,
+    ): number | null => {
+      if (typeof current !== 'number' || typeof base !== 'number') {
+        return null;
+      }
+      return current - base;
+    };
+
     return {
-      CH4: currentReadings.CH4 - baseline.readings.CH4,
-      NH3: currentReadings.NH3 - baseline.readings.NH3,
-      HCHO: currentReadings.HCHO - baseline.readings.HCHO,
-      VOC: currentReadings.VOC - baseline.readings.VOC,
-      Odour: currentReadings.Odour - baseline.readings.Odour,
-      H2S: currentReadings.H2S - baseline.readings.H2S,
-      Etoh: currentReadings.Etoh - baseline.readings.Etoh,
-      NO2: currentReadings.NO2 - baseline.readings.NO2,
+      CH4: subtract(currentReadings.CH4, baseline.readings.CH4),
+      NH3: subtract(currentReadings.NH3, baseline.readings.NH3),
+      HCHO: subtract(currentReadings.HCHO, baseline.readings.HCHO),
+      VOC: subtract(currentReadings.VOC, baseline.readings.VOC),
+      Odour: subtract(currentReadings.Odour, baseline.readings.Odour),
+      H2S: subtract(currentReadings.H2S, baseline.readings.H2S),
+      Etoh: subtract(currentReadings.Etoh, baseline.readings.Etoh),
+      NO2: subtract(currentReadings.NO2, baseline.readings.NO2),
     };
   };
 
