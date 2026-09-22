@@ -64,12 +64,12 @@ describe('SmellWalkScreen keep awake behavior', () => {
     expect(tree!.root.findByProps({ children: 'Recording' })).toBeTruthy();
   });
 
-  it('deactivates keep awake when no walk is active', async () => {
+  it('does not touch keep awake when no walk is active', async () => {
     await ReactTestRenderer.act(() => {
       ReactTestRenderer.create(<SmellWalkScreen />);
     });
 
-    expect(mockDeactivateKeepAwake).toHaveBeenCalled();
+    expect(mockDeactivateKeepAwake).not.toHaveBeenCalled();
     expect(mockActivateKeepAwake).not.toHaveBeenCalled();
   });
 

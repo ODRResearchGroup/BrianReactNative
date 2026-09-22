@@ -55,13 +55,13 @@ export default function SmellWalkScreen() {
   const [zoomLevel, setZoomLevel] = useState(0.1);
 
   useEffect(() => {
-    if (isSmellWalkActive) {
-      KeepAwake.activate();
-      return () => {
-        KeepAwake.deactivate();
-      };
+    if (!isSmellWalkActive) {
+      return;
     }
-    KeepAwake.deactivate();
+    KeepAwake.activate();
+    return () => {
+      KeepAwake.deactivate();
+    };
   }, [isSmellWalkActive]);
 
   useFocusEffect(
