@@ -28,10 +28,7 @@ import {
   Play,
   X,
 } from 'lucide-react-native';
-import {
-  ENV_SENSOR_DEFINITIONS,
-  GAS_SENSOR_DEFINITIONS,
-} from '../../sensors';
+import { ENV_SENSOR_DEFINITIONS, GAS_SENSOR_DEFINITIONS } from '../../sensors';
 
 type SensorValue = { label: string; value: number };
 

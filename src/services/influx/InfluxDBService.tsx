@@ -232,13 +232,15 @@ export const InfluxDBProvider = ({
         deviceId: event.deviceId,
         olfactoryData: {
           readings: {
-            [SENSOR_BY_CHARACTERISTIC_UUID[event.characteristicUUID.toLowerCase()]
-              ?.key ?? event.characteristicUUID]:
+            [SENSOR_BY_CHARACTERISTIC_UUID[
+              event.characteristicUUID.toLowerCase()
+            ]?.key ?? event.characteristicUUID]:
               typeof event.decodedValue === 'number' ? event.decodedValue : 0,
           },
           units: {
-            [SENSOR_BY_CHARACTERISTIC_UUID[event.characteristicUUID.toLowerCase()]
-              ?.key ?? event.characteristicUUID]:
+            [SENSOR_BY_CHARACTERISTIC_UUID[
+              event.characteristicUUID.toLowerCase()
+            ]?.key ?? event.characteristicUUID]:
               SENSOR_BY_CHARACTERISTIC_UUID[
                 event.characteristicUUID.toLowerCase()
               ]?.unit ?? 'V',

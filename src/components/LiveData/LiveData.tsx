@@ -73,12 +73,7 @@ export default function LiveData() {
   );
   const [plotHistory, setPlotHistory] = useState<
     Record<GasSensorKey, PlotPoint[]>
-  >(
-    () =>
-      Object.fromEntries(
-        GAS_SENSOR_DEFINITIONS.map(sensor => [sensor.key, []]),
-      ) as Record<GasSensorKey, PlotPoint[]>,
-  );
+  >(() => ({} as Record<GasSensorKey, PlotPoint[]>));
   const startTimeRef = useRef<number>(Date.now());
 
   useFocusEffect(
@@ -140,7 +135,7 @@ export default function LiveData() {
           value: currentValues[key],
         };
 
-        const points = [...prev[key], newPoint];
+        const points = [...(prev[key] ?? []), newPoint];
         // Keep last PLOT_HISTORY_SIZE points
         updated[key] = points.slice(-PLOT_HISTORY_SIZE);
       });
@@ -252,30 +247,28 @@ export default function LiveData() {
         Smoke: (accumulated.Smoke ?? 0) + (sample.Smoke ?? 0),
         H2: (accumulated.H2 ?? 0) + (sample.H2 ?? 0),
         TempC: (accumulated.TempC ?? 0) + (sample.TempC ?? 0),
-        PressureHPa:
-          (accumulated.PressureHPa ?? 0) + (sample.PressureHPa ?? 0),
-        HumidityPct:
-          (accumulated.HumidityPct ?? 0) + (sample.HumidityPct ?? 0),
+        PressureHPa: (accumulated.PressureHPa ?? 0) + (sample.PressureHPa ?? 0),
+        HumidityPct: (accumulated.HumidityPct ?? 0) + (sample.HumidityPct ?? 0),
         AltitudeM: (accumulated.AltitudeM ?? 0) + (sample.AltitudeM ?? 0),
         GasResOhm: (accumulated.GasResOhm ?? 0) + (sample.GasResOhm ?? 0),
       }),
       {
-      CH4: 0,
-      NH3: 0,
-      HCHO: 0,
-      VOC: 0,
-      Odour: 0,
-      H2S: 0,
-      Etoh: 0,
-      NO2: 0,
-      CO: 0,
-      Smoke: 0,
-      H2: 0,
-      TempC: 0,
-      PressureHPa: 0,
-      HumidityPct: 0,
-      AltitudeM: 0,
-      GasResOhm: 0,
+        CH4: 0,
+        NH3: 0,
+        HCHO: 0,
+        VOC: 0,
+        Odour: 0,
+        H2S: 0,
+        Etoh: 0,
+        NO2: 0,
+        CO: 0,
+        Smoke: 0,
+        H2: 0,
+        TempC: 0,
+        PressureHPa: 0,
+        HumidityPct: 0,
+        AltitudeM: 0,
+        GasResOhm: 0,
       },
     );
 

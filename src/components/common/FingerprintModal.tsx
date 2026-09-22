@@ -621,7 +621,9 @@ export default function FingerprintModal({
                             <Text style={styles.envValue}>
                               {(r as any)[sensor.key] === undefined
                                 ? '—'
-                                : Number((r as any)[sensor.key]).toFixed(2)}{' '}
+                                : Number((r as any)[sensor.key]).toFixed(
+                                    2,
+                                  )}{' '}
                               {sensor.unit}
                             </Text>
                           </View>

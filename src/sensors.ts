@@ -161,12 +161,15 @@ export const SENSOR_DEFINITIONS = [
 ] as const satisfies readonly SensorDefinition[];
 
 export type SensorKey = (typeof SENSOR_DEFINITIONS)[number]['key'];
+type SensorEntry = (typeof SENSOR_DEFINITIONS)[number];
 
 export const GAS_SENSOR_DEFINITIONS = SENSOR_DEFINITIONS.filter(
-  sensor => sensor.kind === 'gas',
+  (sensor): sensor is Extract<SensorEntry, { kind: 'gas' }> =>
+    sensor.kind === 'gas',
 );
 export const ENV_SENSOR_DEFINITIONS = SENSOR_DEFINITIONS.filter(
-  sensor => sensor.kind === 'env',
+  (sensor): sensor is Extract<SensorEntry, { kind: 'env' }> =>
+    sensor.kind === 'env',
 );
 
 export type GasSensorKey = (typeof GAS_SENSOR_DEFINITIONS)[number]['key'];
