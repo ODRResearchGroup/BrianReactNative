@@ -4,8 +4,11 @@ import ReactNativeBlobUtil from 'react-native-blob-util';
 import { zip } from 'react-native-zip-archive';
 import Share from 'react-native-share';
 import {
+  listAnnotationsByWalkId,
+  listAllSensorRecords,
+  listCapturesByWalkId,
+  listFingerprintsByWalkId,
   listCaptures,
-  listSensorRecords,
   listSensorRecordsByWalkId,
 } from '../database/db';
 
@@ -29,7 +32,7 @@ export async function exportAllData(): Promise<void> {
   await RNFS.mkdir(stagingDir);
 
   const [sensorRecords, captures] = await Promise.all([
-    listSensorRecords(10000),
+    listAllSensorRecords(10000),
     listCaptures(10000),
   ]);
 
@@ -122,11 +125,11 @@ export async function exportSmellWalkCsv(walkId: string): Promise<string> {
     'co',
     'smoke',
     'h2',
-    'temperature_c',
-    'pressure_hpa',
-    'humidity_pct',
-    'altitude_m',
-    'gas_resistance_ohm',
+    'temperature',
+    'pressure',
+    'humidity',
+    'altitude',
+    'bme680_gas_resistance',
   ];
   const lines = [
     headers.join(','),
@@ -148,11 +151,11 @@ export async function exportSmellWalkCsv(walkId: string): Promise<string> {
         record.co,
         record.smoke,
         record.h2,
-        record.temperatureC,
-        record.pressureHPa,
-        record.humidityPct,
-        record.altitudeM,
-        record.gasResistanceOhm,
+        record.temperature,
+        record.pressure,
+        record.humidity,
+        record.altitude,
+        record.bme680GasResistance,
       ]
         .map(csvValue)
         .join(','),
@@ -180,4 +183,70 @@ export async function exportSmellWalkCsv(walkId: string): Promise<string> {
     failOnCancel: false,
   });
   return csvPath;
+}
+
+export async function exportSmellWalkZip(walkId: string): Promise<string> {
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const stagingDir = `${EXPORT_DIR}/walk_${walkId}_${timestamp}`;
+  const mediaDir = `${stagingDir}/media`;
+  const csvPath = await exportSmellWalkCsv(walkId);
+  const csvContents = await RNFS.readFile(csvPath, 'utf8');
+  const [samples, fingerprints, captures, annotations] = await Promise.all([
+    listSensorRecordsByWalkId(walkId),
+    listFingerprintsByWalkId(walkId),
+    listCapturesByWalkId(walkId),
+    listAnnotationsByWalkId(walkId),
+  ]);
+
+  await RNFS.mkdir(stagingDir);
+  await RNFS.mkdir(mediaDir);
+
+  await Promise.all([
+    RNFS.writeFile(`${stagingDir}/samples.csv`, csvContents, 'utf8'),
+    RNFS.writeFile(
+      `${stagingDir}/walk_samples.json`,
+      JSON.stringify(samples, null, 2),
+      'utf8',
+    ),
+    RNFS.writeFile(
+      `${stagingDir}/fingerprints.json`,
+      JSON.stringify(fingerprints, null, 2),
+      'utf8',
+    ),
+    RNFS.writeFile(
+      `${stagingDir}/captures.json`,
+      JSON.stringify(captures, null, 2),
+      'utf8',
+    ),
+    RNFS.writeFile(
+      `${stagingDir}/annotations.json`,
+      JSON.stringify(annotations, null, 2),
+      'utf8',
+    ),
+  ]);
+
+  await Promise.all(
+    captures
+      .filter(c => c.localPath)
+      .map(async capture => {
+        const source = capture.localPath!.replace(/^file:\/\//, '');
+        const extension = capture.type === 'audio' ? 'm4a' : 'jpg';
+        const destination = `${mediaDir}/${capture.type}_${capture.id}.${extension}`;
+        if (await RNFS.exists(source)) {
+          await RNFS.copyFile(source, destination);
+        }
+      }),
+  );
+
+  const zipPath = `${EXPORT_DIR}/smellwalk_${walkId}_${timestamp}.zip`;
+  await zip(stagingDir, zipPath);
+  await RNFS.unlink(stagingDir).catch(() => {});
+  await Share.open({
+    title: 'Save Smell Walk Export',
+    url: `file://${zipPath}`,
+    type: 'application/zip',
+    saveToFiles: true,
+    failOnCancel: false,
+  });
+  return zipPath;
 }
