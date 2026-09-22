@@ -72,4 +72,21 @@ describe('SmellWalkScreen keep awake behavior', () => {
     expect(mockDeactivateKeepAwake).toHaveBeenCalled();
     expect(mockActivateKeepAwake).not.toHaveBeenCalled();
   });
+
+  it('deactivates keep awake when an active walk ends', async () => {
+    mockIsSmellWalkActive = true;
+    let tree: ReactTestRenderer.ReactTestRenderer;
+
+    await ReactTestRenderer.act(() => {
+      tree = ReactTestRenderer.create(<SmellWalkScreen />);
+    });
+
+    mockIsSmellWalkActive = false;
+    await ReactTestRenderer.act(() => {
+      tree!.update(<SmellWalkScreen />);
+    });
+
+    expect(mockActivateKeepAwake).toHaveBeenCalled();
+    expect(mockDeactivateKeepAwake).toHaveBeenCalled();
+  });
 });
