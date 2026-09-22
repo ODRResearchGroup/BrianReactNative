@@ -19,6 +19,7 @@ import Slider from '@react-native-community/slider';
 import {
   ENV_SENSOR_DEFINITIONS,
   GAS_SENSOR_DEFINITIONS,
+  SensorKey,
   SENSOR_DEFINITIONS,
 } from '../../sensors';
 
@@ -569,7 +570,8 @@ export default function FingerprintModal({
               {/* Radar Chart */}
               {capturedFingerprint &&
                 (() => {
-                  const r = capturedFingerprint.olfactoryData?.readings ?? {};
+                  const r = (capturedFingerprint.olfactoryData?.readings ??
+                    {}) as SensorReadings;
                   const radarData = SENSOR_ORDER.map((key, idx) => ({
                     x: SENSOR_LABELS[idx],
                     y: Number((r as any)[key]) || 0,
@@ -611,9 +613,9 @@ export default function FingerprintModal({
                           <View key={sensor.key} style={styles.envRow}>
                             <Text style={styles.envLabel}>{sensor.label}</Text>
                             <Text style={styles.envValue}>
-                              {(r as any)[sensor.key] == null
+                              {r[sensor.key as SensorKey] == null
                                 ? '—'
-                                : Number((r as any)[sensor.key]).toFixed(
+                                : Number(r[sensor.key as SensorKey]).toFixed(
                                     2,
                                   )}{' '}
                               {sensor.unit}

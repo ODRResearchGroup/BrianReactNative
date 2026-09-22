@@ -258,24 +258,9 @@ export default function LiveData() {
         source: 'BLE Device',
         olfactoryData: {
           readings: avg,
-          units: {
-            CH4: 'V',
-            NH3: 'V',
-            HCHO: 'V',
-            VOC: 'V',
-            Odour: 'V',
-            H2S: 'V',
-            Etoh: 'V',
-            NO2: 'V',
-            CO: 'V',
-            Smoke: 'V',
-            H2: 'V',
-            TempC: '°C',
-            PressureHPa: 'hPa',
-            HumidityPct: '%',
-            AltitudeM: 'm',
-            GasResOhm: 'Ω',
-          },
+          units: Object.fromEntries(
+            SENSOR_DEFINITIONS.map(sensor => [sensor.key, sensor.unit]),
+          ),
         },
       } as any;
 
