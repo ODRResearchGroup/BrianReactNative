@@ -32,9 +32,9 @@ const BLELoggerApp = () => {
     }
 
     try {
-      await connectToDevice(selectedDevice);
+      const connectedDeviceInstance = await connectToDevice(selectedDevice);
       const discoveredPairs = new Set<string>();
-      const services = await selectedDevice.services();
+      const services = await connectedDeviceInstance.services();
       for (const service of services) {
         const characteristics = await service.characteristics();
         for (const characteristic of characteristics) {
@@ -52,7 +52,7 @@ const BLELoggerApp = () => {
         characteristicUUID: sensor.characteristicUUID,
         label: sensor.key,
       }));
-      await enableNotifications(selectedDevice, notificationSpecs);
+      await enableNotifications(connectedDeviceInstance, notificationSpecs);
       setSelectedDeviceId(null);
       Alert.alert(
         'Connected',

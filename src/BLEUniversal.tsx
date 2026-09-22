@@ -16,7 +16,7 @@ type BLEContextType = {
   connectedDevice: Device | null;
   characteristicValues: { [key: string]: number };
   scanForDevices: () => void;
-  connectToDevice: (device: Device) => Promise<void>;
+  connectToDevice: (device: Device) => Promise<Device>;
   enableNotifications: (
     device: Device,
     characteristics: {
@@ -100,16 +100,17 @@ export const BLEProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   // Connect to a device
-  const connectToDevice = async (device: Device) => {
+  const connectToDevice = async (device: Device): Promise<Device> => {
     try {
-      await device.connect();
-      await device.discoverAllServicesAndCharacteristics();
-      await device.requestMTU(256);
+      const connected = await device.connect();
+      const discovered =
+        await connected.discoverAllServicesAndCharacteristics();
+      await discovered.requestMTU(256);
 
-      setConnectedDevice(device);
-      console.log('Connected to', device.name || 'Unnamed Device');
+      setConnectedDevice(discovered);
+      console.log('Connected to', discovered.name || 'Unnamed Device');
 
-      const services = await device.services();
+      const services = await discovered.services();
       for (const service of services) {
         console.log(`Service UUID: ${service.uuid}`);
         const characteristics = await service.characteristics();
@@ -117,8 +118,10 @@ export const BLEProvider = ({ children }: { children: React.ReactNode }) => {
           console.log(`  Characteristic UUID: ${characteristic.uuid}`);
         }
       }
+      return discovered;
     } catch (error) {
       console.error('Connection error:', error);
+      throw error;
     }
   };
 
