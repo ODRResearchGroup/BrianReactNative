@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   InteractionManager,
@@ -10,6 +10,7 @@ import {
   View,
 } from 'react-native';
 import Slider from '@react-native-community/slider';
+import KeepAwake from 'react-native-keep-awake';
 import { useBLE } from '../../BLEUniversal';
 import CustomRadarChart from '../common/CustomRadarChart';
 import FingerprintModal from '../common/FingerprintModal';
@@ -47,6 +48,16 @@ export default function SmellWalkScreen() {
   const [showConnectionModal, setShowConnectionModal] = useState(false);
   const [showFingerprintModal, setShowFingerprintModal] = useState(false);
   const [zoomLevel, setZoomLevel] = useState(0.1);
+
+  useEffect(() => {
+    if (!isSmellWalkActive) {
+      return;
+    }
+    KeepAwake.activate();
+    return () => {
+      KeepAwake.deactivate();
+    };
+  }, [isSmellWalkActive]);
 
   useFocusEffect(
     useCallback(() => {
@@ -194,6 +205,15 @@ export default function SmellWalkScreen() {
                 ? 'Recording data every 5 seconds'
                 : 'Ready to record'}
             </Text>
+            {isSmellWalkActive && (
+              <View
+                accessibilityRole="text"
+                accessibilityLabel="Recording in progress"
+                style={styles.recordingBadge}>
+                <View style={styles.recordingDot} />
+                <Text style={styles.recordingBadgeText}>Recording</Text>
+              </View>
+            )}
           </View>
           <Pressable
             accessibilityRole="button"
@@ -343,6 +363,30 @@ const styles = StyleSheet.create({
   },
   title: { fontSize: 24, fontWeight: '700', color: '#111' },
   status: { fontSize: 13, color: '#666', marginTop: 4 },
+  recordingBadge: {
+    marginTop: 8,
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#fef2f2',
+    borderColor: '#fecaca',
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  recordingDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#dc2626',
+  },
+  recordingBadgeText: {
+    color: '#991b1b',
+    fontSize: 12,
+    fontWeight: '700',
+  },
   actions: { gap: 10, marginTop: 16 },
   walkButton: {
     minWidth: 135,
