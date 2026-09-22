@@ -10,7 +10,14 @@ import { PermissionsAndroid, Platform } from 'react-native';
 import Geolocation, { GeoPosition } from 'react-native-geolocation-service';
 import { eventEmitter } from '../../BLEUniversal';
 import { BLEDataUpdated, SensorEvent } from '../../types/events';
-import { insertSensorRecord } from '../database/db';
+import {
+  completeWalk,
+  insertSensorRecord,
+  interruptActiveWalks,
+  reactivateWalk,
+  updateWalkDevice,
+  upsertWalk,
+} from '../database/db';
 
 export type LiveLocation = {
   latitude: number;
@@ -25,7 +32,7 @@ type InfluxDBContextType = {
   trail: LiveLocation[];
   isSmellWalkActive: boolean;
   walkId: string | null;
-  startSmellWalk: () => void;
+  startSmellWalk: (existingWalkId?: string) => void;
   stopSmellWalk: () => Promise<string | null>;
 };
 
@@ -42,6 +49,14 @@ const sensorLabelByCharacteristic: Record<string, string> = {
   '4c28fcb8-d69b-404a-8668-41655d814e7f': 'Odor',
   'f8156843-6d98-4ba2-8014-1cf03d7dedb8': 'Ethanol',
   '87dc71bd-29a4-4218-a2a7-83fd2a69cc40': 'Hydrogen Sulfide',
+  '88f6fa6c-c4e0-4a3d-ba72-f435641251c4': 'Carbon Monoxide',
+  'cafb955e-6e7b-424b-9e03-6d8d003aa286': 'Smoke',
+  '0176655b-0007-4e02-abc1-e9f2d6815f46': 'Hydrogen',
+  '00002a6e-0000-1000-8000-00805f9b34fb': 'Temperature',
+  '00002a6d-0000-1000-8000-00805f9b34fb': 'Pressure',
+  '00002a6f-0000-1000-8000-00805f9b34fb': 'Humidity',
+  '00002a69-0000-1000-8000-00805f9b34fb': 'Altitude',
+  '5b0e3c0b-1a44-4b76-82ee-8c2adc2dd8e9': 'BME680 Gas Resistance',
 };
 
 export const InfluxDBProvider = ({
@@ -59,6 +74,15 @@ export const InfluxDBProvider = ({
   const walkReadingsRef = useRef<Record<string, number>>({});
   const walkDeviceIdRef = useRef('unknown');
   const walkTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    interruptActiveWalks(Date.now()).catch(error => {
+      console.warn(
+        'Failed to mark previously active walks as interrupted:',
+        error,
+      );
+    });
+  }, []);
 
   useEffect(() => {
     let watchId: number | null = null;
@@ -140,30 +164,45 @@ export const InfluxDBProvider = ({
         const entry = Object.entries(readings).find(([name]) =>
           names.includes(name.toLowerCase()),
         );
-        return entry?.[1] ?? 0;
+        return entry?.[1] ?? null;
       };
       await insertSensorRecord({
         id: `${currentWalkId}-${Date.now()}`,
         title: currentWalkId,
         description: walkDeviceIdRef.current,
+        walkId: currentWalkId,
+        recordType: 'walk_sample',
         tagsJson: null,
         photoPath: null,
         recordedAt: Date.now(),
         latitude: currentLocation?.latitude ?? null,
         longitude: currentLocation?.longitude ?? null,
         accuracyM: currentLocation?.accuracyM ?? null,
-        ch4: valueFor(['methane', 'ch4']),
-        nh3: valueFor(['ammonia', 'nh3']),
-        hcho: valueFor(['formaldehyde', 'hcho']),
-        voc: valueFor([
-          'voletile organic compounds',
-          'volatile organic compounds',
-          'voc',
+        ch4: valueFor(['methane', 'ch4']) ?? 0,
+        nh3: valueFor(['ammonia', 'nh3']) ?? 0,
+        hcho: valueFor(['formaldehyde', 'hcho']) ?? 0,
+        voc:
+          valueFor([
+            'voletile organic compounds',
+            'volatile organic compounds',
+            'voc',
+          ]) ?? 0,
+        odour: valueFor(['odor', 'odour']) ?? 0,
+        h2s: valueFor(['hydrogen sulfide', 'hydrogen sulphide', 'h2s']) ?? 0,
+        etoh: valueFor(['ethanol', 'etoh']) ?? 0,
+        no2: valueFor(['nitrogen dioxide', 'no2']) ?? 0,
+        co: valueFor(['carbon monoxide', 'co']),
+        smoke: valueFor(['smoke']),
+        h2: valueFor(['hydrogen', 'h2']),
+        temperature: valueFor(['temperature', 'temp']),
+        pressure: valueFor(['pressure']),
+        humidity: valueFor(['humidity']),
+        altitude: valueFor(['altitude']),
+        bme680GasResistance: valueFor([
+          'bme680 gas resistance',
+          'gas resistance',
+          'bme680',
         ]),
-        odour: valueFor(['odor', 'odour']),
-        h2s: valueFor(['hydrogen sulfide', 'hydrogen sulphide', 'h2s']),
-        etoh: valueFor(['ethanol', 'etoh']),
-        no2: valueFor(['nitrogen dioxide', 'no2']),
         deltaCh4: null,
         deltaNh3: null,
         deltaHcho: null,
@@ -184,25 +223,43 @@ export const InfluxDBProvider = ({
     }
   }, []);
 
-  const startSmellWalk = useCallback(() => {
-    if (isSmellWalkActiveRef.current) {
-      return;
-    }
+  const startSmellWalk = useCallback(
+    (existingWalkId?: string) => {
+      if (isSmellWalkActiveRef.current) {
+        return;
+      }
 
-    const nextWalkId = `walk-${Date.now()}`;
-    walkIdRef.current = nextWalkId;
-    walkReadingsRef.current = {};
-    walkDeviceIdRef.current = 'unknown';
-    isSmellWalkActiveRef.current = true;
-    setWalkId(nextWalkId);
-    setTrail(latestLocationRef.current ? [latestLocationRef.current] : []);
-    setIsSmellWalkActive(true);
-    walkTimerRef.current = setInterval(() => {
-      flushWalkData().catch(error => {
-        console.error('Error flushing smell walk data:', error);
+      const nextWalkId = existingWalkId ?? `walk-${Date.now()}`;
+      walkIdRef.current = nextWalkId;
+      walkReadingsRef.current = {};
+      walkDeviceIdRef.current = 'unknown';
+      const persistWalk = existingWalkId
+        ? reactivateWalk(nextWalkId)
+        : upsertWalk({
+            id: nextWalkId,
+            deviceId: 'unknown',
+            deviceName: null,
+            startedAt: Date.now(),
+            endedAt: null,
+            status: 'active',
+            appVersion: null,
+            notes: null,
+          });
+      persistWalk.catch(error => {
+        console.warn('Unable to persist active walk metadata:', error);
       });
-    }, 5000);
-  }, [flushWalkData]);
+      isSmellWalkActiveRef.current = true;
+      setWalkId(nextWalkId);
+      setTrail(latestLocationRef.current ? [latestLocationRef.current] : []);
+      setIsSmellWalkActive(true);
+      walkTimerRef.current = setInterval(() => {
+        flushWalkData().catch(error => {
+          console.error('Error flushing smell walk data:', error);
+        });
+      }, 5000);
+    },
+    [flushWalkData],
+  );
 
   const stopSmellWalk = useCallback(async (): Promise<string | null> => {
     if (!isSmellWalkActiveRef.current) {
@@ -217,6 +274,9 @@ export const InfluxDBProvider = ({
       walkTimerRef.current = null;
     }
     await flushWalkData();
+    if (completedWalkId) {
+      await completeWalk(completedWalkId, Date.now());
+    }
     walkIdRef.current = null;
     setWalkId(null);
     return completedWalkId;
@@ -267,6 +327,15 @@ export const InfluxDBProvider = ({
       }
 
       walkDeviceIdRef.current = event.deviceId || event.source || 'unknown';
+      if (walkIdRef.current && walkDeviceIdRef.current !== 'unknown') {
+        updateWalkDevice(
+          walkIdRef.current,
+          walkDeviceIdRef.current,
+          walkDeviceIdRef.current,
+        ).catch(error => {
+          console.warn('Failed to update walk device metadata:', error);
+        });
+      }
       Object.assign(walkReadingsRef.current, event.olfactoryData.readings);
     };
 

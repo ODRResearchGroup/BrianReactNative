@@ -40,7 +40,7 @@ const SENSOR_LABELS = [
 ];
 import AudioRecorderPlayer from 'react-native-audio-recorder-player';
 import { useBLE } from '../../BLEUniversal';
-import { DocumentDirectoryPath, copyFile } from 'react-native-fs';
+import { DocumentDirectoryPath, copyFile, mkdir } from 'react-native-fs';
 import Svg, { Path, Rect, Line } from 'react-native-svg';
 import useLiveLocation from '../../hooks/useLiveLocation';
 import { SensorEvent, emitter } from '../../types/events';
@@ -74,6 +74,8 @@ const MIC_LABEL: Record<MicPhase, string> = {
 interface FingerprintModalProps {
   visible: boolean;
   onClose: () => void;
+  walkId?: string | null;
+  initialFingerprint?: SensorEvent | null;
 }
 
 const developmentReadings: SensorReadings = {
@@ -90,6 +92,8 @@ const developmentReadings: SensorReadings = {
 export default function FingerprintModal({
   visible,
   onClose,
+  walkId = null,
+  initialFingerprint = null,
 }: FingerprintModalProps) {
   const { characteristicValues } = useBLE();
   const { location } = useLiveLocation();
@@ -109,6 +113,7 @@ export default function FingerprintModal({
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const sensorRecordIdRef = useRef<string>(uuidv4());
   const recordingIdRef = useRef<string | null>(null);
+  const photoCaptureIdRef = useRef<string>(uuidv4());
 
   const createFingerprint = useCallback((): SensorEvent => {
     const hasSensorReadings = Object.keys(characteristicValues).length > 0;
@@ -147,8 +152,13 @@ export default function FingerprintModal({
   }, [characteristicValues]);
 
   const handlePhotoTaken = async (tempPhotoPath: string) => {
-    const permanentPath = `${DocumentDirectoryPath}/fingerprint_${Date.now()}.jpg`;
+    const permanentPath = walkId
+      ? `${DocumentDirectoryPath}/walks/${walkId}/media/${photoCaptureIdRef.current}.jpg`
+      : `${DocumentDirectoryPath}/fingerprint_${Date.now()}.jpg`;
     try {
+      if (walkId) {
+        await mkdir(`${DocumentDirectoryPath}/walks/${walkId}/media`);
+      }
       await copyFile(tempPhotoPath, permanentPath);
       setPhotoPath(permanentPath);
       Alert.alert('Photo captured', 'Photo added to fingerprint');
@@ -193,7 +203,7 @@ export default function FingerprintModal({
       /* already stopped */
     }
 
-    const localUri = audioPathRef.current;
+    let localUri = audioPathRef.current;
     if (!localUri) {
       setMicPhase('idle');
       return;
@@ -204,6 +214,12 @@ export default function FingerprintModal({
       const recordingId = uuidv4();
       recordingIdRef.current = recordingId;
       const startedAtMs = Date.now();
+      if (walkId) {
+        await mkdir(`${DocumentDirectoryPath}/walks/${walkId}/media`);
+        const targetPath = `${DocumentDirectoryPath}/walks/${walkId}/media/${recordingId}.m4a`;
+        await copyFile(localUri.replace(/^file:\/\//, ''), targetPath);
+        localUri = targetPath;
+      }
       const prep = await uploadsPrepare(recordingId, 'm4a');
       const minimalBundle = {
         schema: 'audio_gps_track_v1' as const,
@@ -239,6 +255,7 @@ export default function FingerprintModal({
       await insertCapture({
         id: recordingId,
         sensorRecordId: sensorRecordIdRef.current,
+        walkId,
         type: 'audio',
         localPath: localUri,
         bundleBlobName: prep.bundleUpload.blobName,
@@ -314,11 +331,14 @@ export default function FingerprintModal({
         id,
         title: title || 'Untitled',
         description: description || '',
+        walkId,
+        recordType: 'fingerprint',
         tagsJson: null,
         photoPath: photoPath ?? null,
         recordedAt: Date.now(),
         latitude: location?.latitude ?? null,
         longitude: location?.longitude ?? null,
+        accuracyM: null,
         ch4: r.CH4,
         nh3: r.NH3,
         hcho: r.HCHO,
@@ -327,6 +347,14 @@ export default function FingerprintModal({
         h2s: r.H2S,
         etoh: r.Etoh,
         no2: r.NO2,
+        co: null,
+        smoke: null,
+        h2: null,
+        temperature: null,
+        pressure: null,
+        humidity: null,
+        altitude: null,
+        bme680GasResistance: null,
         deltaCh4: null,
         deltaNh3: null,
         deltaHcho: null,
@@ -336,6 +364,29 @@ export default function FingerprintModal({
         deltaEtoh: null,
         deltaNo2: null,
       });
+      if (photoPath) {
+        await insertCapture({
+          id: photoCaptureIdRef.current,
+          sensorRecordId: id,
+          walkId,
+          type: 'photo',
+          localPath: photoPath,
+          bundleBlobName: null,
+          imageBlobName: null,
+          imageContainer: null,
+          status: 'local',
+          transcriptJson: null,
+          selectedTagsJson: null,
+          suggestedTagsJson: null,
+          description: '',
+          latitudeDisplay: null,
+          longitudeDisplay: null,
+          latitudeRaw: location?.latitude ?? null,
+          longitudeRaw: location?.longitude ?? null,
+          capturedAt: Date.now(),
+          annotationIndex: null,
+        });
+      }
 
       await enqueueSync({
         id: uuidv4(),
@@ -374,15 +425,16 @@ export default function FingerprintModal({
     audioPathRef.current = null;
     recordingIdRef.current = null;
     sensorRecordIdRef.current = uuidv4();
+    photoCaptureIdRef.current = uuidv4();
     setCapturedFingerprint(null);
     onClose();
   };
 
   React.useEffect(() => {
     if (visible && !capturedFingerprint) {
-      setCapturedFingerprint(createFingerprint());
+      setCapturedFingerprint(initialFingerprint ?? createFingerprint());
     }
-  }, [capturedFingerprint, createFingerprint, visible]);
+  }, [capturedFingerprint, createFingerprint, initialFingerprint, visible]);
 
   const isBusy = micPhase === 'uploading' || micPhase === 'processing';
   const statusLabel = MIC_LABEL[micPhase];

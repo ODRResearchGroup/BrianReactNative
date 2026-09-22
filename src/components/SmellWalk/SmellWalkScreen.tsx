@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   InteractionManager,
@@ -15,7 +15,8 @@ import CustomRadarChart from '../common/CustomRadarChart';
 import FingerprintModal from '../common/FingerprintModal';
 import LiveLocationMap from '../common/LiveLocationMap';
 import { useInfluxDB } from '../../services/influx/InfluxDBService';
-import { exportSmellWalkCsv } from '../../services/sync/exportService';
+import { exportSmellWalkZip } from '../../services/sync/exportService';
+import { listInterruptedWalks } from '../../services/database/db';
 import {
   NavigationProp,
   useFocusEffect,
@@ -44,14 +45,21 @@ const mockSensorValues: SensorValue[] = [
 
 export default function SmellWalkScreen() {
   const { characteristicValues, connectedDevice } = useBLE();
-  const { location, trail, isSmellWalkActive, startSmellWalk, stopSmellWalk } =
-    useInfluxDB();
+  const {
+    location,
+    trail,
+    isSmellWalkActive,
+    startSmellWalk,
+    stopSmellWalk,
+    walkId,
+  } = useInfluxDB();
   const navigation = useNavigation<NavigationProp<{ Device: undefined }>>();
   const [mapVisible, setMapVisible] = useState(false);
   const [isConnected, setIsConnected] = useState(__DEV__);
   const [showConnectionModal, setShowConnectionModal] = useState(false);
   const [showFingerprintModal, setShowFingerprintModal] = useState(false);
   const [zoomLevel, setZoomLevel] = useState(0.1);
+  const [didPromptResume, setDidPromptResume] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
@@ -69,6 +77,39 @@ export default function SmellWalkScreen() {
       };
     }, []),
   );
+
+  useEffect(() => {
+    if (didPromptResume || isSmellWalkActive) {
+      return;
+    }
+    listInterruptedWalks()
+      .then(rows => {
+        if (rows.length === 0) {
+          setDidPromptResume(true);
+          return;
+        }
+        const latest = rows[0];
+        Alert.alert(
+          'Interrupted walk found',
+          'Your last walk was interrupted. Do you want to resume it?',
+          [
+            {
+              text: 'End',
+              style: 'cancel',
+              onPress: () => setDidPromptResume(true),
+            },
+            {
+              text: 'Resume',
+              onPress: () => {
+                setDidPromptResume(true);
+                startSmellWalk(latest.id);
+              },
+            },
+          ],
+        );
+      })
+      .catch(() => setDidPromptResume(true));
+  }, [didPromptResume, isSmellWalkActive, startSmellWalk]);
 
   useFocusEffect(
     useCallback(() => {
@@ -138,8 +179,8 @@ export default function SmellWalkScreen() {
     try {
       const completedWalkId = await stopSmellWalk();
       if (completedWalkId) {
-        const savedPath = await exportSmellWalkCsv(completedWalkId);
-        Alert.alert('Smell walk saved', `CSV saved to:\n${savedPath}`);
+        const savedPath = await exportSmellWalkZip(completedWalkId);
+        Alert.alert('Smell walk saved', `Walk export saved to:\n${savedPath}`);
       }
     } catch (error) {
       Alert.alert('Could not save smell walk', String(error));
@@ -276,6 +317,7 @@ export default function SmellWalkScreen() {
       <FingerprintModal
         visible={showFingerprintModal}
         onClose={() => setShowFingerprintModal(false)}
+        walkId={walkId}
       />
 
       <Modal

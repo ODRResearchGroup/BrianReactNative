@@ -10,6 +10,8 @@ export type SensorRecord = {
   id: string;
   title: string;
   description: string;
+  walkId?: string | null;
+  recordType?: 'walk_sample' | 'fingerprint';
   tagsJson: string | null;
   photoPath: string | null;
   recordedAt: number; // Unix ms
@@ -24,6 +26,14 @@ export type SensorRecord = {
   h2s: number;
   etoh: number;
   no2: number;
+  co: number | null;
+  smoke: number | null;
+  h2: number | null;
+  temperature: number | null;
+  pressure: number | null;
+  humidity: number | null;
+  altitude: number | null;
+  bme680GasResistance: number | null;
   deltaCh4: number | null;
   deltaNh3: number | null;
   deltaHcho: number | null;
@@ -39,6 +49,7 @@ export type SensorRecord = {
 export type CaptureRow = {
   id: string;
   sensorRecordId: string | null; // FK → sensor_records.id (nullable = freestanding)
+  walkId?: string | null;
   type: 'audio' | 'photo';
   localPath: string | null;
   bundleBlobName: string | null;
@@ -69,6 +80,7 @@ export type AnnotationRow = {
   id: string;
   captureId: string | null;
   sensorRecordId: string | null;
+  walkId?: string | null;
   strokesJson: string | null;
   selectedTagsJson: string | null;
   savedAt: number;
@@ -87,6 +99,17 @@ export type SyncQueueRow = {
   lastError: string | null;
 };
 
+export type WalkRow = {
+  id: string;
+  deviceId: string;
+  deviceName: string | null;
+  startedAt: number;
+  endedAt: number | null;
+  status: 'active' | 'completed' | 'interrupted';
+  appVersion: string | null;
+  notes: string | null;
+};
+
 // ─── DB singleton ─────────────────────────────────────────────────────────────
 
 let dbPromise: Promise<SQLite.SQLiteDatabase> | null = null;
@@ -101,12 +124,15 @@ async function getDb(): Promise<SQLite.SQLiteDatabase> {
       name: DB_NAME,
       location: 'default',
     });
+    await db.executeSql('PRAGMA journal_mode = WAL;');
 
     await db.executeSql(`
       CREATE TABLE IF NOT EXISTS sensor_records (
         id            TEXT PRIMARY KEY,
         title         TEXT NOT NULL DEFAULT '',
         description   TEXT NOT NULL DEFAULT '',
+        walk_id       TEXT,
+        record_type   TEXT NOT NULL DEFAULT 'fingerprint',
         recordedAt    INTEGER NOT NULL,
         latitude      REAL,
         longitude     REAL,
@@ -119,6 +145,14 @@ async function getDb(): Promise<SQLite.SQLiteDatabase> {
         h2s           REAL NOT NULL DEFAULT 0,
         etoh          REAL NOT NULL DEFAULT 0,
         no2           REAL NOT NULL DEFAULT 0,
+        co            REAL,
+        smoke         REAL,
+        h2            REAL,
+        temperature   REAL,
+        pressure      REAL,
+        humidity      REAL,
+        altitude      REAL,
+        bme680_gas_resistance REAL,
         delta_ch4     REAL,
         delta_nh3     REAL,
         delta_hcho    REAL,
@@ -133,9 +167,23 @@ async function getDb(): Promise<SQLite.SQLiteDatabase> {
     `);
 
     await db.executeSql(`
+      CREATE TABLE IF NOT EXISTS walks (
+        id          TEXT PRIMARY KEY,
+        device_id   TEXT NOT NULL DEFAULT 'unknown',
+        device_name TEXT,
+        started_at  INTEGER NOT NULL,
+        ended_at    INTEGER,
+        status      TEXT NOT NULL DEFAULT 'active',
+        app_version TEXT,
+        notes       TEXT
+      );
+    `);
+
+    await db.executeSql(`
       CREATE TABLE IF NOT EXISTS captures (
         id                  TEXT PRIMARY KEY,
         sensor_record_id    TEXT REFERENCES sensor_records(id),
+        walk_id             TEXT REFERENCES walks(id),
         type                TEXT NOT NULL,
         local_path          TEXT,
         bundle_blob_name    TEXT,
@@ -161,6 +209,7 @@ async function getDb(): Promise<SQLite.SQLiteDatabase> {
         id               TEXT PRIMARY KEY,
         capture_id       TEXT REFERENCES captures(id),
         sensor_record_id TEXT REFERENCES sensor_records(id),
+        walk_id          TEXT REFERENCES walks(id),
         strokes_json     TEXT,
         selected_tags_json TEXT,
         saved_at         INTEGER NOT NULL,
@@ -184,6 +233,109 @@ async function getDb(): Promise<SQLite.SQLiteDatabase> {
         'ALTER TABLE sensor_records ADD COLUMN accuracy_m REAL;',
       );
     } catch {}
+    try {
+      await db.executeSql(
+        'ALTER TABLE sensor_records ADD COLUMN walk_id TEXT;',
+      );
+    } catch {}
+    try {
+      await db.executeSql(
+        "ALTER TABLE sensor_records ADD COLUMN record_type TEXT NOT NULL DEFAULT 'fingerprint';",
+      );
+    } catch {}
+    try {
+      await db.executeSql('ALTER TABLE captures ADD COLUMN walk_id TEXT;');
+    } catch {}
+    try {
+      await db.executeSql('ALTER TABLE annotations ADD COLUMN walk_id TEXT;');
+    } catch {}
+    try {
+      await db.executeSql('ALTER TABLE sensor_records ADD COLUMN co REAL;');
+    } catch {}
+    try {
+      await db.executeSql('ALTER TABLE sensor_records ADD COLUMN smoke REAL;');
+    } catch {}
+    try {
+      await db.executeSql('ALTER TABLE sensor_records ADD COLUMN h2 REAL;');
+    } catch {}
+    try {
+      await db.executeSql(
+        'ALTER TABLE sensor_records ADD COLUMN temperature REAL;',
+      );
+    } catch {}
+    try {
+      await db.executeSql(
+        'ALTER TABLE sensor_records ADD COLUMN pressure REAL;',
+      );
+    } catch {}
+    try {
+      await db.executeSql(
+        'ALTER TABLE sensor_records ADD COLUMN humidity REAL;',
+      );
+    } catch {}
+    try {
+      await db.executeSql(
+        'ALTER TABLE sensor_records ADD COLUMN altitude REAL;',
+      );
+    } catch {}
+    try {
+      await db.executeSql(
+        'ALTER TABLE sensor_records ADD COLUMN bme680_gas_resistance REAL;',
+      );
+    } catch {}
+    await db.executeSql(`
+      UPDATE sensor_records
+      SET walk_id = title
+      WHERE walk_id IS NULL
+        AND title LIKE 'walk-%';
+    `);
+    await db.executeSql(`
+      UPDATE sensor_records
+      SET record_type = CASE
+        WHEN walk_id IS NOT NULL OR title LIKE 'walk-%' THEN 'walk_sample'
+        ELSE 'fingerprint'
+      END
+      WHERE record_type IS NULL OR record_type NOT IN ('walk_sample', 'fingerprint');
+    `);
+    await db.executeSql(`
+      INSERT OR IGNORE INTO walks (id, device_id, device_name, started_at, ended_at, status)
+      SELECT
+        walk_id,
+        COALESCE(NULLIF(MIN(description), ''), 'unknown'),
+        COALESCE(NULLIF(MIN(description), ''), 'unknown'),
+        MIN(recordedAt),
+        MAX(recordedAt),
+        'completed'
+      FROM sensor_records
+      WHERE walk_id IS NOT NULL
+      GROUP BY walk_id;
+    `);
+    await db.executeSql(`
+      UPDATE captures
+      SET walk_id = (
+        SELECT walk_id
+        FROM sensor_records
+        WHERE sensor_records.id = captures.sensor_record_id
+      )
+      WHERE walk_id IS NULL
+        AND sensor_record_id IS NOT NULL;
+    `);
+    await db.executeSql(`
+      UPDATE annotations
+      SET walk_id = COALESCE(
+        (
+          SELECT walk_id
+          FROM sensor_records
+          WHERE sensor_records.id = annotations.sensor_record_id
+        ),
+        (
+          SELECT walk_id
+          FROM captures
+          WHERE captures.id = annotations.capture_id
+        )
+      )
+      WHERE walk_id IS NULL;
+    `);
 
     await db.executeSql(`
       CREATE TABLE IF NOT EXISTS sync_queue (
@@ -197,6 +349,21 @@ async function getDb(): Promise<SQLite.SQLiteDatabase> {
         last_error   TEXT
       );
     `);
+    await db.executeSql(
+      'CREATE INDEX IF NOT EXISTS idx_walks_status ON walks(status);',
+    );
+    await db.executeSql(
+      'CREATE INDEX IF NOT EXISTS idx_sensor_records_walk_id ON sensor_records(walk_id, recordedAt);',
+    );
+    await db.executeSql(
+      'CREATE INDEX IF NOT EXISTS idx_sensor_records_record_type ON sensor_records(record_type, recordedAt);',
+    );
+    await db.executeSql(
+      'CREATE INDEX IF NOT EXISTS idx_captures_walk_id ON captures(walk_id, captured_at);',
+    );
+    await db.executeSql(
+      'CREATE INDEX IF NOT EXISTS idx_annotations_walk_id ON annotations(walk_id, saved_at);',
+    );
 
     return db;
   })();
@@ -212,16 +379,18 @@ export async function insertSensorRecord(
   const db = await getDb();
   await db.executeSql(
     `INSERT OR REPLACE INTO sensor_records (
-      id, title, description, photo_path, recordedAt, latitude, longitude, accuracy_m,
-      ch4, nh3, hcho, voc, odour, h2s, etoh, no2,
+      id, title, description, walk_id, record_type, photo_path, recordedAt, latitude, longitude, accuracy_m,
+      ch4, nh3, hcho, voc, odour, h2s, etoh, no2, co, smoke, h2, temperature, pressure, humidity, altitude, bme680_gas_resistance,
       delta_ch4, delta_nh3, delta_hcho, delta_voc,
       delta_odour, delta_h2s, delta_etoh, delta_no2,
       sync_status, synced_at
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'pending',NULL);`,
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'pending',NULL);`,
     [
       row.id,
       row.title,
       row.description,
+      row.walkId ?? null,
+      row.recordType ?? 'fingerprint',
       row.photoPath ?? null,
       row.recordedAt,
       row.latitude ?? null,
@@ -235,6 +404,14 @@ export async function insertSensorRecord(
       row.h2s,
       row.etoh,
       row.no2,
+      row.co ?? null,
+      row.smoke ?? null,
+      row.h2 ?? null,
+      row.temperature ?? null,
+      row.pressure ?? null,
+      row.humidity ?? null,
+      row.altitude ?? null,
+      row.bme680GasResistance ?? null,
       row.deltaCh4 ?? null,
       row.deltaNh3 ?? null,
       row.deltaHcho ?? null,
@@ -250,7 +427,7 @@ export async function insertSensorRecord(
 export async function listSensorRecords(limit = 100): Promise<SensorRecord[]> {
   const db = await getDb();
   const [res] = await db.executeSql(
-    'SELECT * FROM sensor_records ORDER BY recordedAt DESC LIMIT ?;',
+    "SELECT * FROM sensor_records WHERE record_type = 'fingerprint' ORDER BY recordedAt DESC LIMIT ?;",
     [limit],
   );
   const rows: SensorRecord[] = [];
@@ -261,12 +438,45 @@ export async function listSensorRecords(limit = 100): Promise<SensorRecord[]> {
   return rows;
 }
 
+export async function listAllSensorRecords(
+  limit = 100,
+): Promise<SensorRecord[]> {
+  const db = await getDb();
+  const [res] = await db.executeSql(
+    'SELECT * FROM sensor_records ORDER BY recordedAt DESC LIMIT ?;',
+    [limit],
+  );
+  const rows: SensorRecord[] = [];
+  for (let i = 0; i < res.rows.length; i++) {
+    rows.push(mapSensorRecord(res.rows.item(i)));
+  }
+  return rows;
+}
+
 export async function listSensorRecordsByWalkId(
   walkId: string,
 ): Promise<SensorRecord[]> {
   const db = await getDb();
   const [res] = await db.executeSql(
-    'SELECT * FROM sensor_records WHERE title = ? ORDER BY recordedAt ASC;',
+    `SELECT * FROM sensor_records
+     WHERE (walk_id = ? OR (walk_id IS NULL AND title = ?))
+       AND record_type = 'walk_sample'
+     ORDER BY recordedAt ASC;`,
+    [walkId, walkId],
+  );
+  const rows: SensorRecord[] = [];
+  for (let i = 0; i < res.rows.length; i++) {
+    rows.push(mapSensorRecord(res.rows.item(i)));
+  }
+  return rows;
+}
+
+export async function listFingerprintsByWalkId(
+  walkId: string,
+): Promise<SensorRecord[]> {
+  const db = await getDb();
+  const [res] = await db.executeSql(
+    "SELECT * FROM sensor_records WHERE walk_id = ? AND record_type = 'fingerprint' ORDER BY recordedAt ASC;",
     [walkId],
   );
   const rows: SensorRecord[] = [];
@@ -335,6 +545,8 @@ function mapSensorRecord(r: any): SensorRecord {
     id: r.id,
     title: r.title,
     description: r.description,
+    walkId: r.walk_id ?? null,
+    recordType: r.record_type === 'walk_sample' ? 'walk_sample' : 'fingerprint',
     tagsJson: r.tags_json ?? null,
     photoPath: r.photo_path ?? null,
     recordedAt: r.recordedAt,
@@ -349,6 +561,14 @@ function mapSensorRecord(r: any): SensorRecord {
     h2s: r.h2s,
     etoh: r.etoh,
     no2: r.no2,
+    co: r.co ?? null,
+    smoke: r.smoke ?? null,
+    h2: r.h2 ?? null,
+    temperature: r.temperature ?? null,
+    pressure: r.pressure ?? null,
+    humidity: r.humidity ?? null,
+    altitude: r.altitude ?? null,
+    bme680GasResistance: r.bme680_gas_resistance ?? null,
     deltaCh4: r.delta_ch4 ?? null,
     deltaNh3: r.delta_nh3 ?? null,
     deltaHcho: r.delta_hcho ?? null,
@@ -370,14 +590,16 @@ export async function insertCapture(
   const db = await getDb();
   await db.executeSql(
     `INSERT OR REPLACE INTO captures (
-      id, sensor_record_id, type, local_path, bundle_blob_name,
+      id, sensor_record_id, walk_id, type, local_path, bundle_blob_name,
       image_blob_name, image_container, status,
       transcript_json, selected_tags_json, suggested_tags_json, description,
       latitude_display, longitude_display, latitude_raw, longitude_raw,
       captured_at, annotation_index, sync_status
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'pending');`,
+    ) VALUES (?,?,COALESCE(?, (SELECT walk_id FROM sensor_records WHERE id = ?)),?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'pending');`,
     [
       row.id,
+      row.sensorRecordId ?? null,
+      row.walkId ?? null,
       row.sensorRecordId ?? null,
       row.type,
       row.localPath ?? null,
@@ -484,6 +706,21 @@ export async function listCapturesForSensorRecord(
   return rows;
 }
 
+export async function listCapturesByWalkId(
+  walkId: string,
+): Promise<CaptureRow[]> {
+  const db = await getDb();
+  const [res] = await db.executeSql(
+    'SELECT * FROM captures WHERE walk_id = ? ORDER BY captured_at ASC;',
+    [walkId],
+  );
+  const rows: CaptureRow[] = [];
+  for (let i = 0; i < res.rows.length; i++) {
+    rows.push(mapCapture(res.rows.item(i)));
+  }
+  return rows;
+}
+
 export async function countCaptures(): Promise<number> {
   const db = await getDb();
   const [res] = await db.executeSql(
@@ -497,6 +734,7 @@ function mapCapture(r: any): CaptureRow {
   return {
     id: r.id,
     sensorRecordId: r.sensor_record_id ?? null,
+    walkId: r.walk_id ?? null,
     type: r.type,
     localPath: r.local_path ?? null,
     bundleBlobName: r.bundle_blob_name ?? null,
@@ -525,13 +763,24 @@ export async function upsertAnnotation(
   const db = await getDb();
   await db.executeSql(
     `INSERT OR REPLACE INTO annotations (
-      id, capture_id, sensor_record_id, strokes_json,
+      id, capture_id, sensor_record_id, walk_id, strokes_json,
       selected_tags_json, saved_at, sync_status, azure_blob_name
-    ) VALUES (?,?,?,?,?,?,'pending',?);`,
+    ) VALUES (
+      ?, ?, ?,
+      COALESCE(
+        ?,
+        (SELECT walk_id FROM sensor_records WHERE id = ?),
+        (SELECT walk_id FROM captures WHERE id = ?)
+      ),
+      ?, ?, 'pending', ?
+    );`,
     [
       row.id,
       row.captureId ?? null,
       row.sensorRecordId ?? null,
+      row.walkId ?? null,
+      row.sensorRecordId ?? null,
+      row.captureId ?? null,
       row.strokesJson ?? null,
       row.selectedTagsJson ?? null,
       row.savedAt,
@@ -567,16 +816,117 @@ export async function listAnnotationsForSensorRecord(
   return rows;
 }
 
+export async function listAnnotationsByWalkId(
+  walkId: string,
+): Promise<AnnotationRow[]> {
+  const db = await getDb();
+  const [res] = await db.executeSql(
+    'SELECT * FROM annotations WHERE walk_id = ? ORDER BY saved_at ASC;',
+    [walkId],
+  );
+  const rows: AnnotationRow[] = [];
+  for (let i = 0; i < res.rows.length; i++) {
+    rows.push(mapAnnotation(res.rows.item(i)));
+  }
+  return rows;
+}
+
 function mapAnnotation(r: any): AnnotationRow {
   return {
     id: r.id,
     captureId: r.capture_id ?? null,
     sensorRecordId: r.sensor_record_id ?? null,
+    walkId: r.walk_id ?? null,
     strokesJson: r.strokes_json ?? null,
     selectedTagsJson: r.selected_tags_json ?? null,
     savedAt: r.saved_at,
     syncStatus: r.sync_status,
     azureBlobName: r.azure_blob_name ?? null,
+  };
+}
+
+// ─── walks ──────────────────────────────────────────────────────────────────────
+
+export async function upsertWalk(row: WalkRow): Promise<void> {
+  const db = await getDb();
+  await db.executeSql(
+    `INSERT OR REPLACE INTO walks (
+      id, device_id, device_name, started_at, ended_at, status, app_version, notes
+    ) VALUES (?,?,?,?,?,?,?,?);`,
+    [
+      row.id,
+      row.deviceId,
+      row.deviceName ?? null,
+      row.startedAt,
+      row.endedAt ?? null,
+      row.status,
+      row.appVersion ?? null,
+      row.notes ?? null,
+    ],
+  );
+}
+
+export async function completeWalk(id: string, endedAt: number): Promise<void> {
+  const db = await getDb();
+  await db.executeSql(
+    "UPDATE walks SET ended_at = ?, status = 'completed' WHERE id = ?;",
+    [endedAt, id],
+  );
+}
+
+export async function updateWalkDevice(
+  id: string,
+  deviceId: string,
+  deviceName: string | null,
+): Promise<void> {
+  const db = await getDb();
+  await db.executeSql(
+    'UPDATE walks SET device_id = ?, device_name = COALESCE(?, device_name) WHERE id = ?;',
+    [deviceId, deviceName, id],
+  );
+}
+
+export async function reactivateWalk(id: string): Promise<void> {
+  const db = await getDb();
+  await db.executeSql(
+    "UPDATE walks SET ended_at = NULL, status = 'active' WHERE id = ?;",
+    [id],
+  );
+}
+
+export async function interruptActiveWalks(endedAt: number): Promise<void> {
+  const db = await getDb();
+  await db.executeSql(
+    "UPDATE walks SET ended_at = COALESCE(ended_at, ?), status = 'interrupted' WHERE status = 'active';",
+    [endedAt],
+  );
+}
+
+export async function listInterruptedWalks(): Promise<WalkRow[]> {
+  const db = await getDb();
+  const [res] = await db.executeSql(
+    "SELECT * FROM walks WHERE status = 'interrupted' ORDER BY started_at DESC;",
+  );
+  const rows: WalkRow[] = [];
+  for (let i = 0; i < res.rows.length; i++) {
+    rows.push(mapWalk(res.rows.item(i)));
+  }
+  return rows;
+}
+
+function mapWalk(r: any): WalkRow {
+  return {
+    id: r.id,
+    deviceId: r.device_id ?? 'unknown',
+    deviceName: r.device_name ?? null,
+    startedAt: r.started_at,
+    endedAt: r.ended_at ?? null,
+    status:
+      r.status === 'active' || r.status === 'interrupted'
+        ? r.status
+        : 'completed',
+    appVersion: r.app_version ?? null,
+    notes: r.notes ?? null,
   };
 }
 

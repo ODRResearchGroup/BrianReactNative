@@ -26,10 +26,10 @@ import CustomRadarChart from '../common/CustomRadarChart';
 import FingerprintModal from '../common/FingerprintModal';
 import TimedProgressBar from './components/TimeBar';
 import { SensorReadings } from '../../types/fingerprintTypes';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SensorEvent, emitter } from '../../types/events';
 import { Alert } from 'react-native';
 import Svg, { Path, Line, Rect } from 'react-native-svg';
+import { useInfluxDB } from '../../services/influx/InfluxDBService';
 
 const { width } = Dimensions.get('window');
 
@@ -55,6 +55,7 @@ interface PlotPoint {
 
 export default function LiveData() {
   const { characteristicValues, connectedDevice } = useBLE();
+  const { walkId } = useInfluxDB();
   const navigation = useNavigation<NavigationProp<{ Device: undefined }>>();
   const [isConnected, setIsConnected] = useState(__DEV__);
 
@@ -68,6 +69,8 @@ export default function LiveData() {
   const nitrogenDioxide = characteristicValues['Nitrogen Dioxide'] || 0;
 
   const [showFingerprintModal, setShowFingerprintModal] = useState(false);
+  const [pendingFingerprint, setPendingFingerprint] =
+    useState<SensorEvent | null>(null);
   const [showTimeBar, setShowTimeBar] = useState(false);
   const [samplingMode, setSamplingMode] = useState<'idle' | 'fingerprint'>(
     'idle',
@@ -316,27 +319,9 @@ export default function LiveData() {
         },
       } as any;
 
-      const savedData = {
-        fingerprint,
-        location: null,
-        fingerprintTitle: { title: 'Untitled' },
-        humanDescription: { description: '' },
-        photoPath: undefined,
-        deltaReadings: undefined,
-        timestamp: new Date().toISOString(),
-      };
-
-      const key = `sensor_fingerprint_${Date.now()}`;
-      AsyncStorage.setItem(key, JSON.stringify(savedData))
-        .then(() => {
-          emitter.emit('sensor_reading', fingerprint);
-          Alert.alert('Saved', 'Fingerprint saved');
-          setShowFingerprintModal(true);
-        })
-        .catch(err => {
-          console.error('Failed to save fingerprint', err);
-          Alert.alert('Save failed', String(err));
-        });
+      emitter.emit('sensor_reading', fingerprint);
+      setPendingFingerprint(fingerprint);
+      setShowFingerprintModal(true);
     }
   };
 
@@ -381,7 +366,10 @@ export default function LiveData() {
           visible={showFingerprintModal}
           onClose={() => {
             setShowFingerprintModal(false);
+            setPendingFingerprint(null);
           }}
+          walkId={walkId}
+          initialFingerprint={pendingFingerprint}
         />
 
         <TimedProgressBar
