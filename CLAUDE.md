@@ -95,8 +95,11 @@ Don't change these without a coordinated firmware change.
 | Altitude              | `00002a69-…` (ESS)                     | m                                        |
 | BME680 gas resistance | `5b0e3c0b-1a44-4b76-82ee-8c2adc2dd8e9` | Ω                                        |
 | Time sync (write)     | `a1b2c3d4-e5f6-4a5b-8c9d-0e1f2a3b4c5d` | Unix seconds, 8 bytes LE, encrypted link |
+| Board status          | `407fd299-d6ed-45ed-ab21-437f101c8acd` | 1-byte bitmask, read-only, captured once at boot |
 
 (16-bit UUIDs expand to `0000XXXX-0000-1000-8000-00805f9b34fb`.)
+
+**Board status** (`sensors.ts` → `BOARD_STATUS_CHARACTERISTIC_UUID`/`BOARD_STATUS_DEFINITIONS`): bit *n* set = that I2C board was detected at boot (bit 0/1/2 = ADS1/ADS2/ADS3, bit 3 = BME680). Not live — the firmware never re-checks after boot, so this won't catch a board failing mid-walk. Read once via `readBoardStatus()` right after connecting (see `BLEScreen.tsx`); it is not a `SENSOR_DEFINITIONS` entry since it isn't a notified sensor value. Battery monitor status is not implemented (separate issue).
 
 ## Known problems and gotchas
 

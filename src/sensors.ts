@@ -178,3 +178,26 @@ export type EnvSensorKey = (typeof ENV_SENSOR_DEFINITIONS)[number]['key'];
 export const SENSOR_BY_CHARACTERISTIC_UUID = Object.fromEntries(
   SENSOR_DEFINITIONS.map(sensor => [sensor.characteristicUUID, sensor]),
 ) as Record<string, (typeof SENSOR_DEFINITIONS)[number]>;
+
+// Board status: a 1-byte bitmask reported by the firmware (read-only,
+// captured once at boot; see BrianHardware CLAUDE.md). Not a sensor value,
+// so it lives outside SENSOR_DEFINITIONS.
+export const BOARD_STATUS_CHARACTERISTIC_UUID =
+  '407fd299-d6ed-45ed-ab21-437f101c8acd';
+
+export type BoardStatusDefinition = {
+  bit: number;
+  label: string;
+};
+
+export const BOARD_STATUS_DEFINITIONS: readonly BoardStatusDefinition[] = [
+  { bit: 0, label: 'Gas board 1 (HCHO / CH4 / VOC / Odor)' },
+  { bit: 1, label: 'Gas board 2 (EtOH / H2S / NO2 / NH3)' },
+  { bit: 2, label: 'Gas board 3 (CO / Smoke / H2)' },
+  { bit: 3, label: 'BME680 environmental' },
+] as const;
+
+export function isBoardStatusBitSet(status: number, bit: number): boolean {
+  // eslint-disable-next-line no-bitwise
+  return (status & (1 << bit)) !== 0;
+}
