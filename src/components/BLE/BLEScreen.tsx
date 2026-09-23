@@ -10,15 +10,21 @@ import {
 } from 'react-native';
 import KeepAwake from 'react-native-keep-awake';
 import { useBLE } from '../../BLEUniversal';
-import { SENSOR_DEFINITIONS } from '../../sensors';
+import {
+  BOARD_STATUS_DEFINITIONS,
+  SENSOR_DEFINITIONS,
+  isBoardStatusBitSet,
+} from '../../sensors';
 
 const BLELoggerApp = () => {
   const {
     devices,
     connectedDevice,
+    boardStatus,
     scanForDevices,
     connectToDevice,
     enableNotifications,
+    readBoardStatus,
   } = useBLE();
 
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
@@ -53,6 +59,7 @@ const BLELoggerApp = () => {
         sensorKey: sensor.key,
       }));
       await enableNotifications(connectedDeviceInstance, notificationSpecs);
+      await readBoardStatus(connectedDeviceInstance);
       setSelectedDeviceId(null);
       Alert.alert(
         'Connected',
@@ -129,6 +136,30 @@ const BLELoggerApp = () => {
           <Pressable style={styles.connectButton} onPress={handleConnect}>
             <Text style={styles.connectButtonText}>Connect</Text>
           </Pressable>
+        )}
+
+        {/* Board Status Section (shown once connected) */}
+        {connectedDevice && boardStatus !== null && (
+          <View style={styles.devicesSection}>
+            <Text style={styles.sectionLabel}>HARDWARE STATUS</Text>
+            <View style={styles.devicesList}>
+              {BOARD_STATUS_DEFINITIONS.map(board => {
+                const present = isBoardStatusBitSet(boardStatus, board.bit);
+                return (
+                  <View key={board.bit} style={styles.deviceItem}>
+                    <Text style={styles.deviceName}>{board.label}</Text>
+                    <Text
+                      style={[
+                        styles.deviceStatus,
+                        present && styles.deviceStatusConnected,
+                      ]}>
+                      {present ? 'Detected' : 'Missing'}
+                    </Text>
+                  </View>
+                );
+              })}
+            </View>
+          </View>
         )}
       </ScrollView>
     </SafeAreaView>

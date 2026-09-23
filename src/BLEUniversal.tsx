@@ -3,6 +3,10 @@ import { BleManager, Device } from 'react-native-ble-plx';
 import { PermissionsAndroid, Platform } from 'react-native';
 import mitt from 'mitt';
 import { AppEventEmitter, BLEDataUpdated } from './types/events';
+import {
+  BOARD_STATUS_CHARACTERISTIC_UUID,
+  CUSTOM_SERVICE_UUID,
+} from './sensors';
 
 // Create a global event emitter instance
 const eventEmitter: AppEventEmitter = mitt();
@@ -15,6 +19,7 @@ type BLEContextType = {
   devices: Device[];
   connectedDevice: Device | null;
   characteristicValues: { [key: string]: number };
+  boardStatus: number | null;
   scanForDevices: () => void;
   connectToDevice: (device: Device) => Promise<Device>;
   enableNotifications: (
@@ -25,6 +30,7 @@ type BLEContextType = {
       sensorKey: string;
     }[],
   ) => Promise<void>;
+  readBoardStatus: (device: Device) => Promise<number | null>;
   eventEmitter: AppEventEmitter;
 };
 
@@ -37,6 +43,7 @@ export const BLEProvider = ({ children }: { children: React.ReactNode }) => {
   const [characteristicValues, setCharacteristicValues] = useState<{
     [key: string]: number;
   }>({});
+  const [boardStatus, setBoardStatus] = useState<number | null>(null);
 
   useEffect(() => {
     requestPermissions();
@@ -227,6 +234,33 @@ export const BLEProvider = ({ children }: { children: React.ReactNode }) => {
     }
   };
 
+  // Read the board status bitmask (see BrianHardware CLAUDE.md). This is
+  // captured once at boot on the firmware side and never changes, so a
+  // single read after connecting is enough - no notification is set up.
+  const readBoardStatus = async (device: Device): Promise<number | null> => {
+    try {
+      const characteristic = await device.readCharacteristicForService(
+        CUSTOM_SERVICE_UUID,
+        BOARD_STATUS_CHARACTERISTIC_UUID,
+      );
+      const rawValue = characteristic.value;
+      if (!rawValue) {
+        return null;
+      }
+
+      const binary =
+        typeof atob === 'function'
+          ? atob(rawValue)
+          : Buffer.from(rawValue, 'base64').toString('binary');
+      const byte = binary.charCodeAt(0);
+      setBoardStatus(byte);
+      return byte;
+    } catch (error) {
+      console.error('Read board status error:', error);
+      return null;
+    }
+  };
+
   return (
     <BLEContext.Provider
       value={{
@@ -234,9 +268,11 @@ export const BLEProvider = ({ children }: { children: React.ReactNode }) => {
         devices,
         connectedDevice,
         characteristicValues,
+        boardStatus,
         scanForDevices,
         connectToDevice,
         enableNotifications,
+        readBoardStatus,
         eventEmitter,
       }}>
       {children}
