@@ -2,13 +2,6 @@ apply plugin: "com.android.application"
 apply plugin: "org.jetbrains.kotlin.android"
 apply plugin: "com.facebook.react"
 apply from: project(':react-native-config').projectDir.getPath() + "/dotenv.gradle"
-task printEnv {
-    doLast {
-        println "INFLUX_TOKEN: ${project.env.get("INFLUX_TOKEN")}"
-        println "INFLUX_URL: ${project.env.get("INFLUX_URL")}"
-        println "INFLUX_DATABASE: ${project.env.get("INFLUX_DATABASE")}"
-    }
-}
 
 /**
  * This is the configuration block to customize your React Native Android app.

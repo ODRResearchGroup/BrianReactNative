@@ -300,6 +300,7 @@ export const InfluxDBProvider = ({
         sensorLabelByCharacteristic[event.characteristicUUID.toLowerCase()] ??
         event.characteristicUUID;
 
+      // Create a SensorEvent for each BLE update
       const sensorEvent: SensorEvent = {
         type: 'sensor_reading',
         timestamp: event.timestamp,
@@ -339,9 +340,11 @@ export const InfluxDBProvider = ({
       Object.assign(walkReadingsRef.current, incomingReadings);
     };
 
+    // Subscribe to events
     eventEmitter.on('ble_data_updated', handleBLEUpdate);
     eventEmitter.on('sensor_reading', handleSensorReading);
 
+    // Cleanup subscriptions
     return () => {
       eventEmitter.off('ble_data_updated', handleBLEUpdate);
       eventEmitter.off('sensor_reading', handleSensorReading);
