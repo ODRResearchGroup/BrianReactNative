@@ -11,6 +11,9 @@ import Geolocation, { GeoPosition } from 'react-native-geolocation-service';
 import { eventEmitter } from '../../BLEUniversal';
 import { BLEDataUpdated, SensorEvent } from '../../types/events';
 import { insertSensorRecord } from '../database/db';
+import { INFLUX_CONFIG } from './config';
+import { InfluxClient } from './client';
+import { InfluxPoint } from './types';
 
 export type LiveLocation = {
   latitude: number;
@@ -59,6 +62,7 @@ export const InfluxDBProvider = ({
   const walkReadingsRef = useRef<Record<string, number>>({});
   const walkDeviceIdRef = useRef('unknown');
   const walkTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const influxClient = useRef(new InfluxClient(INFLUX_CONFIG));
 
   useEffect(() => {
     let watchId: number | null = null;
@@ -97,11 +101,15 @@ export const InfluxDBProvider = ({
           };
           latestLocationRef.current = nextLocation;
           setLocation(nextLocation);
+
           if (isSmellWalkActiveRef.current) {
             setTrail(previous => [...previous, nextLocation]);
           }
         },
-        error => console.warn('Live location error:', error.message),
+        error =>
+          console.warn(
+            `[Location] watchPosition error (code ${error.code}): ${error.message}`,
+          ),
         {
           enableHighAccuracy: true,
           distanceFilter: 0,
@@ -114,7 +122,10 @@ export const InfluxDBProvider = ({
     };
 
     startLocationWatch().catch(error => {
-      console.warn('Unable to start live location:', error);
+      console.warn(
+        '[Location] Unexpected error starting location watch:',
+        error,
+      );
     });
 
     return () => {
@@ -129,26 +140,60 @@ export const InfluxDBProvider = ({
   const flushWalkData = useCallback(async () => {
     const currentWalkId = walkIdRef.current;
     const readings = { ...walkReadingsRef.current };
+    const currentLocation = latestLocationRef.current;
+
     if (!currentWalkId || Object.keys(readings).length === 0) {
       return;
     }
 
     walkReadingsRef.current = {};
-    const currentLocation = latestLocationRef.current;
+
+    const valueFor = (names: string[]) => {
+      const entry = Object.entries(readings).find(([name]) =>
+        names.includes(name.toLowerCase()),
+      );
+      return entry?.[1] ?? 0;
+    };
+
+    const timestamp = Date.now();
+
+    const point: InfluxPoint = {
+      measurement: 'smell_walk_point',
+      tags: {
+        walk_id: currentWalkId,
+        device_id: walkDeviceIdRef.current,
+      },
+      fields: {
+        ch4: valueFor(['methane', 'ch4']),
+        nh3: valueFor(['ammonia', 'nh3']),
+        hcho: valueFor(['formaldehyde', 'hcho']),
+        voc: valueFor([
+          'voletile organic compounds',
+          'volatile organic compounds',
+          'voc',
+        ]),
+        odour: valueFor(['odor', 'odour']),
+        h2s: valueFor(['hydrogen sulfide', 'hydrogen sulphide', 'h2s']),
+        etoh: valueFor(['ethanol', 'etoh']),
+        no2: valueFor(['nitrogen dioxide', 'no2']),
+        ...(currentLocation && {
+          latitude: currentLocation.latitude,
+          longitude: currentLocation.longitude,
+          accuracy_m: currentLocation.accuracyM ?? 0,
+        }),
+      },
+      timestamp: timestamp * 1_000_000,
+    };
+
     try {
-      const valueFor = (names: string[]) => {
-        const entry = Object.entries(readings).find(([name]) =>
-          names.includes(name.toLowerCase()),
-        );
-        return entry?.[1] ?? 0;
-      };
+      // Save locally
       await insertSensorRecord({
-        id: `${currentWalkId}-${Date.now()}`,
+        id: `${currentWalkId}-${timestamp}`,
         title: currentWalkId,
         description: walkDeviceIdRef.current,
         tagsJson: null,
         photoPath: null,
-        recordedAt: Date.now(),
+        recordedAt: timestamp,
         latitude: currentLocation?.latitude ?? null,
         longitude: currentLocation?.longitude ?? null,
         accuracyM: currentLocation?.accuracyM ?? null,
@@ -173,19 +218,27 @@ export const InfluxDBProvider = ({
         deltaEtoh: null,
         deltaNo2: null,
       });
-      console.log(`Stored smell walk sample ${currentWalkId}`);
+
+      // Upload to InfluxDB Cloud
+      await influxClient.current.writeTimeseriesPoint(point);
     } catch (error) {
-      walkReadingsRef.current = {
-        ...readings,
-        ...walkReadingsRef.current,
-      };
-      console.error('Error storing smell walk data locally:', error);
+      // Restore readings so the next flush retries them
+      walkReadingsRef.current = { ...readings, ...walkReadingsRef.current };
+      console.error('[InfluxDB] Flush failed — readings restored for retry:', {
+        walkId: currentWalkId,
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+        restoredReadings: walkReadingsRef.current,
+      });
       throw error;
     }
   }, []);
 
   const startSmellWalk = useCallback(() => {
     if (isSmellWalkActiveRef.current) {
+      console.warn(
+        '[SmellWalk] startSmellWalk called but a walk is already active — ignoring',
+      );
       return;
     }
 
@@ -197,28 +250,37 @@ export const InfluxDBProvider = ({
     setWalkId(nextWalkId);
     setTrail(latestLocationRef.current ? [latestLocationRef.current] : []);
     setIsSmellWalkActive(true);
+
     walkTimerRef.current = setInterval(() => {
       flushWalkData().catch(error => {
-        console.error('Error flushing smell walk data:', error);
+        console.error('[SmellWalk] Interval flush error:', error);
       });
     }, 5000);
   }, [flushWalkData]);
 
   const stopSmellWalk = useCallback(async (): Promise<string | null> => {
     if (!isSmellWalkActiveRef.current) {
+      console.warn(
+        '[SmellWalk] stopSmellWalk called but no walk is active — ignoring',
+      );
       return null;
     }
 
     const completedWalkId = walkIdRef.current;
+
     isSmellWalkActiveRef.current = false;
     setIsSmellWalkActive(false);
+
     if (walkTimerRef.current !== null) {
       clearInterval(walkTimerRef.current);
       walkTimerRef.current = null;
     }
+
     await flushWalkData();
+
     walkIdRef.current = null;
     setWalkId(null);
+
     return completedWalkId;
   }, [flushWalkData]);
 
@@ -234,9 +296,10 @@ export const InfluxDBProvider = ({
   // Set up event listeners for pub/sub system
   useEffect(() => {
     const handleBLEUpdate = (event: BLEDataUpdated) => {
-      console.log('InfluxDB Service: BLE data updated:', event);
+      const label =
+        sensorLabelByCharacteristic[event.characteristicUUID.toLowerCase()] ??
+        event.characteristicUUID;
 
-      // Create a SensorEvent for each BLE update
       const sensorEvent: SensorEvent = {
         type: 'sensor_reading',
         timestamp: event.timestamp,
@@ -244,13 +307,11 @@ export const InfluxDBProvider = ({
         deviceId: event.deviceId,
         olfactoryData: {
           readings: {
-            [sensorLabelByCharacteristic[
-              event.characteristicUUID.toLowerCase()
-            ] ?? event.characteristicUUID]:
+            [label]:
               typeof event.decodedValue === 'number' ? event.decodedValue : 0,
           },
           units: {
-            [event.characteristicUUID]: 'ppm', // Adjust based on your sensor
+            [event.characteristicUUID]: 'ppm',
           },
         },
       };
@@ -260,21 +321,27 @@ export const InfluxDBProvider = ({
     };
 
     const handleSensorReading = async (event: SensorEvent) => {
-      console.log('InfluxDB Service: Sensor reading:', event);
-
-      if (!isSmellWalkActiveRef.current || !event.olfactoryData?.readings) {
+      if (!isSmellWalkActiveRef.current) {
         return;
       }
 
+      if (!event.olfactoryData?.readings) {
+        console.warn(
+          '[Sensor] Reading event has no olfactoryData.readings — skipping:',
+          event,
+        );
+        return;
+      }
+
+      const incomingReadings = event.olfactoryData.readings;
       walkDeviceIdRef.current = event.deviceId || event.source || 'unknown';
-      Object.assign(walkReadingsRef.current, event.olfactoryData.readings);
+
+      Object.assign(walkReadingsRef.current, incomingReadings);
     };
 
-    // Subscribe to events
     eventEmitter.on('ble_data_updated', handleBLEUpdate);
     eventEmitter.on('sensor_reading', handleSensorReading);
 
-    // Cleanup subscriptions
     return () => {
       eventEmitter.off('ble_data_updated', handleBLEUpdate);
       eventEmitter.off('sensor_reading', handleSensorReading);

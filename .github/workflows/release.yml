@@ -34,10 +34,13 @@ jobs:
         env:
           INFLUX_URL: ${{ secrets.INFLUX_URL }}
           INFLUX_TOKEN: ${{ secrets.INFLUX_TOKEN }}
-          INFLUX_DATABASE: ${{ secrets.INFLUX_DATABASE }}
+          INFLUX_ORG: ${{ secrets.INFLUX_ORG }}
+          INFLUX_TIMESERIES_BUCKET: ${{ secrets.INFLUX_TIMESERIES_BUCKET }}
+          INFLUX_FINGERPRINTS_BUCKET: ${{ secrets.INFLUX_FINGERPRINTS_BUCKET }}
+
         run: |
-          printf 'INFLUX_URL=%s\nINFLUX_TOKEN=%s\nINFLUX_DATABASE=%s\n' \
-            "$INFLUX_URL" "$INFLUX_TOKEN" "$INFLUX_DATABASE" > .env
+          printf 'INFLUX_URL=%s\nINFLUX_TOKEN=%s\nINFLUX_ORG=%s\nINFLUX_INFLUX_TIMESERIES_BUCKET=%s\nINFLUX_FINGERPRINTS_BUCKET=%s\n' \
+            "$INFLUX_URL" "$INFLUX_TOKEN" "$INFLUX_ORG" "$INFLUX_TIMESERIES_BUCKET" "$INFLUX_FINGERPRINTS_BUCKET" > .env
 
       - name: Set up Java
         uses: actions/setup-java@v4
