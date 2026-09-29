@@ -50,7 +50,7 @@ export class BufferedInfluxWriter {
 
     for (let attempt = 1; attempt <= this.opts.maxRetries; attempt++) {
       try {
-        await this.client.writePoints(batch);
+        await this.client.writeTimeseriesPoints(batch);
         return;
       } catch (err) {
         const isLastAttempt = attempt === this.opts.maxRetries;
