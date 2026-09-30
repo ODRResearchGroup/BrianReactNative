@@ -1,17 +1,63 @@
 import { InfluxConfig, InfluxPoint } from './types';
 import { toLineProtocol } from './utils';
 
+export class InfluxWriteError extends Error {
+  constructor(
+    public readonly status: number,
+    public readonly responseBody: string,
+  ) {
+    super(
+      `InfluxDB write failed with HTTP ${status}: ${
+        responseBody || 'no response body'
+      }`,
+    );
+    this.name = 'InfluxWriteError';
+  }
+}
+
+function validateConfig(config: InfluxConfig): void {
+  const missing: string[] = [];
+
+  if (!config.url) {
+    missing.push('INFLUX_URL');
+  }
+
+  if (!config.token) {
+    missing.push('INFLUX_TOKEN');
+  }
+
+  if (!config.org) {
+    missing.push('INFLUX_ORG');
+  }
+
+  if (!config.timeseriesBucket) {
+    missing.push('INFLUX_TIMESERIES_BUCKET');
+  }
+
+  if (!config.fingerprintsBucket) {
+    missing.push('INFLUX_FINGERPRINTS_BUCKET');
+  }
+
+  if (missing.length > 0) {
+    throw new Error(`Missing Influx configuration: ${missing.join(', ')}`);
+  }
+}
+
 export class InfluxClient {
   private readonly writeUrl: string;
   private readonly timeseriesBucket: string;
   private readonly fingerprintsBucket: string;
+  private readonly headers: Record<string, string>;
 
-  private readonly headers: HeadersInit_;
+  constructor(private readonly config: InfluxConfig) {
+    validateConfig(config);
 
-  constructor(private config: InfluxConfig) {
-    this.writeUrl = `${config.url}/api/v2/write?org=${encodeURIComponent(
-      config.org,
-    )}&precision=ns`;
+    const baseUrl = config.url.replace(/\/+$/, '');
+
+    this.writeUrl =
+      `${baseUrl}/api/v2/write` +
+      `?org=${encodeURIComponent(config.org)}` +
+      '&precision=ns';
 
     this.timeseriesBucket = config.timeseriesBucket;
     this.fingerprintsBucket = config.fingerprintsBucket;
@@ -73,12 +119,5 @@ export class InfluxClient {
       const text = await response.text();
       throw new InfluxWriteError(response.status, text);
     }
-  }
-}
-
-export class InfluxWriteError extends Error {
-  constructor(public statusCode: number, message: string) {
-    super(`InfluxDB write failed [${statusCode}]: ${message}`);
-    this.name = 'InfluxWriteError';
   }
 }

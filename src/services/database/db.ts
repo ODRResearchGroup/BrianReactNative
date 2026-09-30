@@ -34,11 +34,13 @@ export type SensorRecord = {
   deltaNo2: number | null;
   syncStatus: 'pending' | 'synced' | 'failed';
   syncedAt: number | null;
+  influxSyncStatus: 'pending' | 'synced' | 'failed';
+  influxSyncedAt: number | null;
 };
 
 export type CaptureRow = {
   id: string;
-  sensorRecordId: string | null; // FK → sensor_records.id (nullable = freestanding)
+  sensorRecordId: string | null;
   type: 'audio' | 'photo';
   localPath: string | null;
   bundleBlobName: string | null;
@@ -104,31 +106,33 @@ async function getDb(): Promise<SQLite.SQLiteDatabase> {
 
     await db.executeSql(`
       CREATE TABLE IF NOT EXISTS sensor_records (
-        id            TEXT PRIMARY KEY,
-        title         TEXT NOT NULL DEFAULT '',
-        description   TEXT NOT NULL DEFAULT '',
-        recordedAt    INTEGER NOT NULL,
-        latitude      REAL,
-        longitude     REAL,
-        accuracy_m    REAL,
-        ch4           REAL NOT NULL DEFAULT 0,
-        nh3           REAL NOT NULL DEFAULT 0,
-        hcho          REAL NOT NULL DEFAULT 0,
-        voc           REAL NOT NULL DEFAULT 0,
-        odour         REAL NOT NULL DEFAULT 0,
-        h2s           REAL NOT NULL DEFAULT 0,
-        etoh          REAL NOT NULL DEFAULT 0,
-        no2           REAL NOT NULL DEFAULT 0,
-        delta_ch4     REAL,
-        delta_nh3     REAL,
-        delta_hcho    REAL,
-        delta_voc     REAL,
-        delta_odour   REAL,
-        delta_h2s     REAL,
-        delta_etoh    REAL,
-        delta_no2     REAL,
-        sync_status   TEXT NOT NULL DEFAULT 'pending',
-        synced_at     INTEGER
+        id                    TEXT PRIMARY KEY,
+        title                 TEXT NOT NULL DEFAULT '',
+        description           TEXT NOT NULL DEFAULT '',
+        recordedAt            INTEGER NOT NULL,
+        latitude              REAL,
+        longitude             REAL,
+        accuracy_m            REAL,
+        ch4                   REAL NOT NULL DEFAULT 0,
+        nh3                   REAL NOT NULL DEFAULT 0,
+        hcho                  REAL NOT NULL DEFAULT 0,
+        voc                   REAL NOT NULL DEFAULT 0,
+        odour                 REAL NOT NULL DEFAULT 0,
+        h2s                   REAL NOT NULL DEFAULT 0,
+        etoh                  REAL NOT NULL DEFAULT 0,
+        no2                   REAL NOT NULL DEFAULT 0,
+        delta_ch4             REAL,
+        delta_nh3             REAL,
+        delta_hcho            REAL,
+        delta_voc             REAL,
+        delta_odour           REAL,
+        delta_h2s             REAL,
+        delta_etoh            REAL,
+        delta_no2             REAL,
+        sync_status           TEXT NOT NULL DEFAULT 'pending',
+        synced_at             INTEGER,
+        influx_sync_status    TEXT NOT NULL DEFAULT 'pending',
+        influx_synced_at      INTEGER
       );
     `);
 
@@ -158,32 +162,33 @@ async function getDb(): Promise<SQLite.SQLiteDatabase> {
 
     await db.executeSql(`
       CREATE TABLE IF NOT EXISTS annotations (
-        id               TEXT PRIMARY KEY,
-        capture_id       TEXT REFERENCES captures(id),
-        sensor_record_id TEXT REFERENCES sensor_records(id),
-        strokes_json     TEXT,
-        selected_tags_json TEXT,
-        saved_at         INTEGER NOT NULL,
-        sync_status      TEXT NOT NULL DEFAULT 'pending',
-        azure_blob_name  TEXT
+        id                  TEXT PRIMARY KEY,
+        capture_id          TEXT REFERENCES captures(id),
+        sensor_record_id    TEXT REFERENCES sensor_records(id),
+        strokes_json        TEXT,
+        selected_tags_json  TEXT,
+        saved_at            INTEGER NOT NULL,
+        sync_status         TEXT NOT NULL DEFAULT 'pending',
+        azure_blob_name     TEXT
       );
     `);
 
-    try {
-      await db.executeSql(
-        'ALTER TABLE sensor_records ADD COLUMN tags_json TEXT;',
-      );
-    } catch {}
-    try {
-      await db.executeSql(
-        'ALTER TABLE sensor_records ADD COLUMN photo_path TEXT;',
-      );
-    } catch {}
-    try {
-      await db.executeSql(
-        'ALTER TABLE sensor_records ADD COLUMN accuracy_m REAL;',
-      );
-    } catch {}
+    const migrations = [
+      'ALTER TABLE sensor_records ADD COLUMN tags_json TEXT;',
+      'ALTER TABLE sensor_records ADD COLUMN photo_path TEXT;',
+      'ALTER TABLE sensor_records ADD COLUMN accuracy_m REAL;',
+      `ALTER TABLE sensor_records
+       ADD COLUMN influx_sync_status TEXT NOT NULL DEFAULT 'synced';`,
+      'ALTER TABLE sensor_records ADD COLUMN influx_synced_at INTEGER;',
+    ];
+
+    for (const migration of migrations) {
+      try {
+        await db.executeSql(migration);
+      } catch {
+        // Column already exists. SQLite has no IF NOT EXISTS for ADD COLUMN.
+      }
+    }
 
     await db.executeSql(`
       CREATE TABLE IF NOT EXISTS sync_queue (
@@ -204,24 +209,62 @@ async function getDb(): Promise<SQLite.SQLiteDatabase> {
   return dbPromise;
 }
 
-// ─── sensor_records ───────────────────────────────────────────────────────────
+// sensor_records
 
 export async function insertSensorRecord(
-  row: Omit<SensorRecord, 'syncStatus' | 'syncedAt'>,
+  row: Omit<
+    SensorRecord,
+    'syncStatus' | 'syncedAt' | 'influxSyncStatus' | 'influxSyncedAt'
+  >,
 ): Promise<void> {
   const db = await getDb();
+
   await db.executeSql(
     `INSERT OR REPLACE INTO sensor_records (
-      id, title, description, photo_path, recordedAt, latitude, longitude, accuracy_m,
-      ch4, nh3, hcho, voc, odour, h2s, etoh, no2,
-      delta_ch4, delta_nh3, delta_hcho, delta_voc,
-      delta_odour, delta_h2s, delta_etoh, delta_no2,
-      sync_status, synced_at
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'pending',NULL);`,
+      id,
+      title,
+      description,
+      tags_json,
+      photo_path,
+      recordedAt,
+      latitude,
+      longitude,
+      accuracy_m,
+      ch4,
+      nh3,
+      hcho,
+      voc,
+      odour,
+      h2s,
+      etoh,
+      no2,
+      delta_ch4,
+      delta_nh3,
+      delta_hcho,
+      delta_voc,
+      delta_odour,
+      delta_h2s,
+      delta_etoh,
+      delta_no2,
+      sync_status,
+      synced_at,
+      influx_sync_status,
+      influx_synced_at
+    )
+    VALUES (
+      ?, ?, ?, ?, ?, ?, ?, ?, ?,
+      ?, ?, ?, ?, ?, ?, ?, ?,
+      ?, ?, ?, ?, ?, ?, ?, ?,
+      'pending',
+      NULL,
+      'pending',
+      NULL
+    );`,
     [
       row.id,
       row.title,
       row.description,
+      row.tagsJson ?? null,
       row.photoPath ?? null,
       row.recordedAt,
       row.latitude ?? null,
@@ -255,8 +298,7 @@ export async function listSensorRecords(limit = 100): Promise<SensorRecord[]> {
   );
   const rows: SensorRecord[] = [];
   for (let i = 0; i < res.rows.length; i++) {
-    const r = res.rows.item(i);
-    rows.push(mapSensorRecord(r));
+    rows.push(mapSensorRecord(res.rows.item(i)));
   }
   return rows;
 }
@@ -312,8 +354,12 @@ export async function updateSensorRecordDescription(
 ): Promise<void> {
   const db = await getDb();
   await db.executeSql(
-    'UPDATE sensor_records SET description = ?, sync_status = ? WHERE id = ?;',
-    [description, 'pending', id],
+    `UPDATE sensor_records
+     SET description = ?,
+         sync_status = ?,
+         influx_sync_status = ?
+     WHERE id = ?;`,
+    [description, 'pending', 'pending', id],
   );
 }
 
@@ -325,8 +371,61 @@ export async function updateSensorRecord(
 ): Promise<void> {
   const db = await getDb();
   await db.executeSql(
-    'UPDATE sensor_records SET title = ?, description = ?, tags_json = ?, sync_status = ? WHERE id = ?;',
-    [title, description, tagsJson, 'pending', id],
+    `UPDATE sensor_records
+     SET title = ?,
+         description = ?,
+         tags_json = ?,
+         sync_status = ?,
+         influx_sync_status = ?
+     WHERE id = ?;`,
+    [title, description, tagsJson, 'pending', 'pending', id],
+  );
+}
+
+export async function listPendingInfluxSensorRecords(
+  limit = 50,
+): Promise<SensorRecord[]> {
+  const db = await getDb();
+
+  const [res] = await db.executeSql(
+    `SELECT *
+     FROM sensor_records
+     WHERE influx_sync_status IS NULL
+        OR influx_sync_status != 'synced'
+     ORDER BY recordedAt ASC
+     LIMIT ?;`,
+    [limit],
+  );
+
+  const rows: SensorRecord[] = [];
+
+  for (let i = 0; i < res.rows.length; i++) {
+    rows.push(mapSensorRecord(res.rows.item(i)));
+  }
+
+  return rows;
+}
+
+export async function markSensorRecordInfluxSynced(id: string): Promise<void> {
+  const db = await getDb();
+
+  await db.executeSql(
+    `UPDATE sensor_records
+     SET influx_sync_status = 'synced',
+         influx_synced_at = ?
+     WHERE id = ?;`,
+    [Date.now(), id],
+  );
+}
+
+export async function markSensorRecordInfluxFailed(id: string): Promise<void> {
+  const db = await getDb();
+
+  await db.executeSql(
+    `UPDATE sensor_records
+     SET influx_sync_status = 'failed'
+     WHERE id = ?;`,
+    [id],
   );
 }
 
@@ -359,6 +458,8 @@ function mapSensorRecord(r: any): SensorRecord {
     deltaNo2: r.delta_no2 ?? null,
     syncStatus: r.sync_status,
     syncedAt: r.synced_at ?? null,
+    influxSyncStatus: r.influx_sync_status ?? 'pending',
+    influxSyncedAt: r.influx_synced_at ?? null,
   };
 }
 
@@ -370,12 +471,27 @@ export async function insertCapture(
   const db = await getDb();
   await db.executeSql(
     `INSERT OR REPLACE INTO captures (
-      id, sensor_record_id, type, local_path, bundle_blob_name,
-      image_blob_name, image_container, status,
-      transcript_json, selected_tags_json, suggested_tags_json, description,
-      latitude_display, longitude_display, latitude_raw, longitude_raw,
-      captured_at, annotation_index, sync_status
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'pending');`,
+      id,
+      sensor_record_id,
+      type,
+      local_path,
+      bundle_blob_name,
+      image_blob_name,
+      image_container,
+      status,
+      transcript_json,
+      selected_tags_json,
+      suggested_tags_json,
+      description,
+      latitude_display,
+      longitude_display,
+      latitude_raw,
+      longitude_raw,
+      captured_at,
+      annotation_index,
+      sync_status
+    )
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'pending');`,
     [
       row.id,
       row.sensorRecordId ?? null,
@@ -428,7 +544,10 @@ export async function updateCaptureTags(
 ): Promise<void> {
   const db = await getDb();
   await db.executeSql(
-    'UPDATE captures SET selected_tags_json = ?, suggested_tags_json = ? WHERE id = ?;',
+    `UPDATE captures
+     SET selected_tags_json = ?,
+         suggested_tags_json = ?
+     WHERE id = ?;`,
     [JSON.stringify(selected), JSON.stringify(suggested), id],
   );
 }
@@ -525,9 +644,16 @@ export async function upsertAnnotation(
   const db = await getDb();
   await db.executeSql(
     `INSERT OR REPLACE INTO annotations (
-      id, capture_id, sensor_record_id, strokes_json,
-      selected_tags_json, saved_at, sync_status, azure_blob_name
-    ) VALUES (?,?,?,?,?,?,'pending',?);`,
+      id,
+      capture_id,
+      sensor_record_id,
+      strokes_json,
+      selected_tags_json,
+      saved_at,
+      sync_status,
+      azure_blob_name
+    )
+    VALUES (?,?,?,?,?,?,'pending',?);`,
     [
       row.id,
       row.captureId ?? null,
@@ -587,8 +713,17 @@ export async function enqueueSync(
 ): Promise<void> {
   const db = await getDb();
   await db.executeSql(
-    `INSERT OR REPLACE INTO sync_queue (id, entity_type, entity_id, operation, payload_json, created_at, attempts, last_error)
-     VALUES (?,?,?,?,?,?,0,NULL);`,
+    `INSERT OR REPLACE INTO sync_queue (
+      id,
+      entity_type,
+      entity_id,
+      operation,
+      payload_json,
+      created_at,
+      attempts,
+      last_error
+    )
+    VALUES (?,?,?,?,?,?,0,NULL);`,
     [
       row.id,
       row.entityType,
@@ -603,7 +738,11 @@ export async function enqueueSync(
 export async function dequeueSyncBatch(limit = 10): Promise<SyncQueueRow[]> {
   const db = await getDb();
   const [res] = await db.executeSql(
-    'SELECT * FROM sync_queue WHERE attempts < 5 ORDER BY created_at ASC LIMIT ?;',
+    `SELECT *
+     FROM sync_queue
+     WHERE attempts < 5
+     ORDER BY created_at ASC
+     LIMIT ?;`,
     [limit],
   );
   const rows: SyncQueueRow[] = [];
@@ -634,7 +773,10 @@ export async function markSyncFailure(
 ): Promise<void> {
   const db = await getDb();
   await db.executeSql(
-    'UPDATE sync_queue SET attempts = attempts + 1, last_error = ? WHERE id = ?;',
+    `UPDATE sync_queue
+     SET attempts = attempts + 1,
+         last_error = ?
+     WHERE id = ?;`,
     [error, id],
   );
 }
@@ -642,7 +784,12 @@ export async function markSyncFailure(
 export async function listPendingAudioCaptures(): Promise<CaptureRow[]> {
   const db = await getDb();
   const [res] = await db.executeSql(
-    "SELECT * FROM captures WHERE type = 'audio' AND status = 'uploaded' ORDER BY captured_at ASC LIMIT 20;",
+    `SELECT *
+     FROM captures
+     WHERE type = 'audio'
+       AND status = 'uploaded'
+     ORDER BY captured_at ASC
+     LIMIT 20;`,
     [],
   );
   const rows: CaptureRow[] = [];

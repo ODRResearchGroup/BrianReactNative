@@ -1,16 +1,22 @@
 import React, {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useRef,
   useState,
-  useCallback,
 } from 'react';
 import { PermissionsAndroid, Platform } from 'react-native';
 import Geolocation, { GeoPosition } from 'react-native-geolocation-service';
+
 import { eventEmitter } from '../../BLEUniversal';
 import { BLEDataUpdated, SensorEvent } from '../../types/events';
-import { insertSensorRecord } from '../database/db';
+import {
+  insertSensorRecord,
+  listPendingInfluxSensorRecords,
+  markSensorRecordInfluxFailed,
+  markSensorRecordInfluxSynced,
+} from '../database/db';
 import { INFLUX_CONFIG } from './config';
 import { InfluxClient } from './client';
 import { InfluxPoint } from './types';
@@ -56,13 +62,18 @@ export const InfluxDBProvider = ({
   const [trail, setTrail] = useState<LiveLocation[]>([]);
   const [isSmellWalkActive, setIsSmellWalkActive] = useState(false);
   const [walkId, setWalkId] = useState<string | null>(null);
+
   const latestLocationRef = useRef<LiveLocation | null>(null);
   const isSmellWalkActiveRef = useRef(false);
   const walkIdRef = useRef<string | null>(null);
   const walkReadingsRef = useRef<Record<string, number>>({});
   const walkDeviceIdRef = useRef('unknown');
   const walkTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const flushInProgressRef = useRef(false);
+
   const influxClient = useRef(new InfluxClient(INFLUX_CONFIG));
+
+  // Location
 
   useEffect(() => {
     let watchId: number | null = null;
@@ -73,6 +84,7 @@ export const InfluxDBProvider = ({
         const permission = await PermissionsAndroid.request(
           PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
         );
+
         if (permission !== PermissionsAndroid.RESULTS.GRANTED) {
           console.warn('Location permission denied; sensor data will omit GPS');
           return;
@@ -81,6 +93,7 @@ export const InfluxDBProvider = ({
         const authorization = await Geolocation.requestAuthorization(
           'whenInUse',
         );
+
         if (authorization !== 'granted') {
           console.warn('Location permission denied; sensor data will omit GPS');
           return;
@@ -99,6 +112,7 @@ export const InfluxDBProvider = ({
             accuracyM: position.coords.accuracy ?? null,
             recordedAt: position.timestamp,
           };
+
           latestLocationRef.current = nextLocation;
           setLocation(nextLocation);
 
@@ -130,6 +144,7 @@ export const InfluxDBProvider = ({
 
     return () => {
       active = false;
+
       if (watchId !== null) {
         Geolocation.clearWatch(watchId);
         Geolocation.stopObserving();
@@ -137,100 +152,219 @@ export const InfluxDBProvider = ({
     };
   }, []);
 
-  const flushWalkData = useCallback(async () => {
-    const currentWalkId = walkIdRef.current;
-    const readings = { ...walkReadingsRef.current };
-    const currentLocation = latestLocationRef.current;
+  const syncPendingInfluxRecords = useCallback(async () => {
+    const records = await listPendingInfluxSensorRecords(50);
 
-    if (!currentWalkId || Object.keys(readings).length === 0) {
+    for (const record of records) {
+      const point: InfluxPoint = {
+        measurement: 'smell_walk_point',
+        tags: {
+          walk_id: record.title,
+          device_id: record.description || 'unknown',
+        },
+        fields: {
+          ch4: record.ch4,
+          nh3: record.nh3,
+          hcho: record.hcho,
+          voc: record.voc,
+          odour: record.odour,
+          h2s: record.h2s,
+          etoh: record.etoh,
+          no2: record.no2,
+          ...(record.latitude !== null && record.longitude !== null
+            ? {
+                latitude: record.latitude,
+                longitude: record.longitude,
+                accuracy_m: record.accuracyM ?? 0,
+              }
+            : {}),
+        },
+        timestamp: record.recordedAt * 1_000_000,
+      };
+
+      try {
+        await influxClient.current.writeTimeseriesPoint(point);
+        await markSensorRecordInfluxSynced(record.id);
+      } catch (error) {
+        await markSensorRecordInfluxFailed(record.id);
+
+        console.error('[InfluxDB] Retry failed:', {
+          recordId: record.id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    let syncing = false;
+
+    const run = async () => {
+      if (cancelled || syncing) {
+        return;
+      }
+
+      syncing = true;
+
+      try {
+        await syncPendingInfluxRecords();
+      } catch (error) {
+        console.error('[InfluxDB] Pending sync failed:', error);
+      } finally {
+        syncing = false;
+      }
+    };
+
+    run().catch(error => {
+      console.error('[InfluxDB] Pending sync failed:', error);
+    });
+
+    const timer = setInterval(() => {
+      run().catch(error => {
+        console.error('[InfluxDB] Pending sync failed:', error);
+      });
+    }, 15_000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [syncPendingInfluxRecords]);
+
+  // Smell-walk aggregation
+
+  const flushWalkData = useCallback(async () => {
+    if (flushInProgressRef.current) {
       return;
     }
 
-    walkReadingsRef.current = {};
-
-    const valueFor = (names: string[]) => {
-      const entry = Object.entries(readings).find(([name]) =>
-        names.includes(name.toLowerCase()),
-      );
-      return entry?.[1] ?? 0;
-    };
-
-    const timestamp = Date.now();
-
-    const point: InfluxPoint = {
-      measurement: 'smell_walk_point',
-      tags: {
-        walk_id: currentWalkId,
-        device_id: walkDeviceIdRef.current,
-      },
-      fields: {
-        ch4: valueFor(['methane', 'ch4']),
-        nh3: valueFor(['ammonia', 'nh3']),
-        hcho: valueFor(['formaldehyde', 'hcho']),
-        voc: valueFor([
-          'voletile organic compounds',
-          'volatile organic compounds',
-          'voc',
-        ]),
-        odour: valueFor(['odor', 'odour']),
-        h2s: valueFor(['hydrogen sulfide', 'hydrogen sulphide', 'h2s']),
-        etoh: valueFor(['ethanol', 'etoh']),
-        no2: valueFor(['nitrogen dioxide', 'no2']),
-        ...(currentLocation && {
-          latitude: currentLocation.latitude,
-          longitude: currentLocation.longitude,
-          accuracy_m: currentLocation.accuracyM ?? 0,
-        }),
-      },
-      timestamp: timestamp * 1_000_000,
-    };
+    flushInProgressRef.current = true;
 
     try {
-      // Save locally
-      await insertSensorRecord({
-        id: `${currentWalkId}-${timestamp}`,
-        title: currentWalkId,
-        description: walkDeviceIdRef.current,
-        tagsJson: null,
-        photoPath: null,
-        recordedAt: timestamp,
-        latitude: currentLocation?.latitude ?? null,
-        longitude: currentLocation?.longitude ?? null,
-        accuracyM: currentLocation?.accuracyM ?? null,
-        ch4: valueFor(['methane', 'ch4']),
-        nh3: valueFor(['ammonia', 'nh3']),
-        hcho: valueFor(['formaldehyde', 'hcho']),
-        voc: valueFor([
-          'voletile organic compounds',
-          'volatile organic compounds',
-          'voc',
-        ]),
-        odour: valueFor(['odor', 'odour']),
-        h2s: valueFor(['hydrogen sulfide', 'hydrogen sulphide', 'h2s']),
-        etoh: valueFor(['ethanol', 'etoh']),
-        no2: valueFor(['nitrogen dioxide', 'no2']),
-        deltaCh4: null,
-        deltaNh3: null,
-        deltaHcho: null,
-        deltaVoc: null,
-        deltaOdour: null,
-        deltaH2s: null,
-        deltaEtoh: null,
-        deltaNo2: null,
-      });
+      const currentWalkId = walkIdRef.current;
+      const readings = { ...walkReadingsRef.current };
+      const currentLocation = latestLocationRef.current;
 
-      // Upload to InfluxDB Cloud
-      await influxClient.current.writeTimeseriesPoint(point);
-    } catch (error) {
-      // Restore readings so the next flush retries them
-      walkReadingsRef.current = { ...readings, ...walkReadingsRef.current };
-      console.error('[InfluxDB] Flush failed — readings restored for retry:', {
-        walkId: currentWalkId,
-        error: error instanceof Error ? error.message : String(error),
-        stack: error instanceof Error ? error.stack : undefined,
-        restoredReadings: walkReadingsRef.current,
-      });
-      throw error;
+      if (!currentWalkId || Object.keys(readings).length === 0) {
+        return;
+      }
+
+      walkReadingsRef.current = {};
+
+      const valueFor = (names: string[]): number => {
+        const normalizedNames = names.map(name => name.toLowerCase());
+
+        const entry = Object.entries(readings).find(([name]) =>
+          normalizedNames.includes(name.toLowerCase()),
+        );
+
+        return entry?.[1] ?? 0;
+      };
+
+      const timestamp = Date.now();
+      const recordId = `${currentWalkId}-${timestamp}`;
+      const deviceId = walkDeviceIdRef.current || 'unknown';
+
+      const ch4 = valueFor(['methane', 'ch4']);
+      const nh3 = valueFor(['ammonia', 'nh3']);
+      const hcho = valueFor(['formaldehyde', 'hcho']);
+      const voc = valueFor([
+        'voletile organic compounds',
+        'volatile organic compounds',
+        'voc',
+      ]);
+      const odour = valueFor(['odor', 'odour']);
+      const h2s = valueFor(['hydrogen sulfide', 'hydrogen sulphide', 'h2s']);
+      const etoh = valueFor(['ethanol', 'etoh']);
+      const no2 = valueFor(['nitrogen dioxide', 'no2']);
+
+      const point: InfluxPoint = {
+        measurement: 'smell_walk_point',
+        tags: {
+          walk_id: currentWalkId,
+          device_id: deviceId,
+        },
+        fields: {
+          ch4,
+          nh3,
+          hcho,
+          voc,
+          odour,
+          h2s,
+          etoh,
+          no2,
+          ...(currentLocation
+            ? {
+                latitude: currentLocation.latitude,
+                longitude: currentLocation.longitude,
+                accuracy_m: currentLocation.accuracyM ?? 0,
+              }
+            : {}),
+        },
+        timestamp: timestamp * 1_000_000,
+      };
+
+      try {
+        await insertSensorRecord({
+          id: recordId,
+          title: currentWalkId,
+          description: deviceId,
+          tagsJson: null,
+          photoPath: null,
+          recordedAt: timestamp,
+          latitude: currentLocation?.latitude ?? null,
+          longitude: currentLocation?.longitude ?? null,
+          accuracyM: currentLocation?.accuracyM ?? null,
+
+          ch4,
+          nh3,
+          hcho,
+          voc,
+          odour,
+          h2s,
+          etoh,
+          no2,
+
+          deltaCh4: null,
+          deltaNh3: null,
+          deltaHcho: null,
+          deltaVoc: null,
+          deltaOdour: null,
+          deltaH2s: null,
+          deltaEtoh: null,
+          deltaNo2: null,
+        });
+      } catch (error) {
+        walkReadingsRef.current = {
+          ...readings,
+          ...walkReadingsRef.current,
+        };
+
+        console.error('[SQLite] Smell-walk flush failed; readings restored:', {
+          walkId: currentWalkId,
+          recordId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+
+        throw error;
+      }
+
+      try {
+        await influxClient.current.writeTimeseriesPoint(point);
+
+        await markSensorRecordInfluxSynced(recordId);
+      } catch (error) {
+        await markSensorRecordInfluxFailed(recordId);
+
+        console.error('[InfluxDB] Upload failed; record remains in SQLite:', {
+          walkId: currentWalkId,
+          recordId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    } finally {
+      flushInProgressRef.current = false;
     }
   }, []);
 
@@ -243,17 +377,20 @@ export const InfluxDBProvider = ({
     }
 
     const nextWalkId = `walk-${Date.now()}`;
+
     walkIdRef.current = nextWalkId;
     walkReadingsRef.current = {};
     walkDeviceIdRef.current = 'unknown';
+
     isSmellWalkActiveRef.current = true;
+
     setWalkId(nextWalkId);
     setTrail(latestLocationRef.current ? [latestLocationRef.current] : []);
     setIsSmellWalkActive(true);
 
     walkTimerRef.current = setInterval(() => {
       flushWalkData().catch(error => {
-        console.error('[SmellWalk] Interval flush error:', error);
+        console.error('[SmellWalk] Periodic flush failed:', error);
       });
     }, 5000);
   }, [flushWalkData]);
@@ -279,6 +416,7 @@ export const InfluxDBProvider = ({
     await flushWalkData();
 
     walkIdRef.current = null;
+    walkDeviceIdRef.current = 'unknown';
     setWalkId(null);
 
     return completedWalkId;
@@ -288,19 +426,19 @@ export const InfluxDBProvider = ({
     () => () => {
       if (walkTimerRef.current !== null) {
         clearInterval(walkTimerRef.current);
+        walkTimerRef.current = null;
       }
     },
     [],
   );
 
-  // Set up event listeners for pub/sub system
+  // BLE event handling
   useEffect(() => {
     const handleBLEUpdate = (event: BLEDataUpdated) => {
       const label =
         sensorLabelByCharacteristic[event.characteristicUUID.toLowerCase()] ??
         event.characteristicUUID;
 
-      // Create a SensorEvent for each BLE update
       const sensorEvent: SensorEvent = {
         type: 'sensor_reading',
         timestamp: event.timestamp,
@@ -317,11 +455,10 @@ export const InfluxDBProvider = ({
         },
       };
 
-      // Emit sensor event
       eventEmitter.emit('sensor_reading', sensorEvent);
     };
 
-    const handleSensorReading = async (event: SensorEvent) => {
+    const handleSensorReading = (event: SensorEvent) => {
       if (!isSmellWalkActiveRef.current) {
         return;
       }
@@ -335,16 +472,17 @@ export const InfluxDBProvider = ({
       }
 
       const incomingReadings = event.olfactoryData.readings;
-      walkDeviceIdRef.current = event.deviceId || event.source || 'unknown';
+
+      if (walkDeviceIdRef.current === 'unknown') {
+        walkDeviceIdRef.current = event.deviceId || event.source || 'unknown';
+      }
 
       Object.assign(walkReadingsRef.current, incomingReadings);
     };
 
-    // Subscribe to events
     eventEmitter.on('ble_data_updated', handleBLEUpdate);
     eventEmitter.on('sensor_reading', handleSensorReading);
 
-    // Cleanup subscriptions
     return () => {
       eventEmitter.off('ble_data_updated', handleBLEUpdate);
       eventEmitter.off('sensor_reading', handleSensorReading);
@@ -369,8 +507,10 @@ export const InfluxDBProvider = ({
 
 export const useInfluxDB = () => {
   const context = useContext(InfluxDBContext);
+
   if (!context) {
     throw new Error('useInfluxDB must be used inside an InfluxDBProvider');
   }
+
   return context;
 };
