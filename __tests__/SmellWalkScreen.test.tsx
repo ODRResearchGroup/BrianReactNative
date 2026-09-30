@@ -1,10 +1,8 @@
 import React from 'react';
-import ReactTestRenderer from 'react-test-renderer';
-import SmellWalkScreen from '../src/components/SmellWalk/SmellWalkScreen';
+import { render } from '@testing-library/react-native';
 
 const mockActivateKeepAwake = jest.fn();
 const mockDeactivateKeepAwake = jest.fn();
-
 let mockIsSmellWalkActive = false;
 
 jest.mock('@react-navigation/native', () => ({
@@ -40,11 +38,16 @@ jest.mock('../src/services/influx/InfluxDBService', () => ({
 }));
 
 jest.mock('../src/components/common/LiveLocationMap', () => () => null);
+
 jest.mock('../src/components/common/CustomRadarChart', () => () => null);
+
 jest.mock('../src/components/common/FingerprintModal', () => () => null);
+
 jest.mock('../src/services/sync/exportService', () => ({
   exportSmellWalkCsv: jest.fn(),
 }));
+
+import SmellWalkScreen from '../src/components/SmellWalk/SmellWalkScreen';
 
 describe('SmellWalkScreen keep awake behavior', () => {
   beforeEach(() => {
@@ -55,54 +58,48 @@ describe('SmellWalkScreen keep awake behavior', () => {
   it('activates keep awake and shows recording indicator during a walk', async () => {
     mockIsSmellWalkActive = true;
 
-    let tree: ReactTestRenderer.ReactTestRenderer;
-    await ReactTestRenderer.act(() => {
-      tree = ReactTestRenderer.create(<SmellWalkScreen />);
-    });
+    const { getByText, unmount } = await render(<SmellWalkScreen />);
 
     expect(mockActivateKeepAwake).toHaveBeenCalledTimes(1);
-    expect(tree!.root.findByProps({ children: 'Recording' })).toBeTruthy();
+    expect(getByText('Recording')).toBeTruthy();
+
+    await unmount();
   });
 
   it('does not touch keep awake when no walk is active', async () => {
-    await ReactTestRenderer.act(() => {
-      ReactTestRenderer.create(<SmellWalkScreen />);
-    });
+    const { unmount } = await render(<SmellWalkScreen />);
 
     expect(mockDeactivateKeepAwake).not.toHaveBeenCalled();
     expect(mockActivateKeepAwake).not.toHaveBeenCalled();
+
+    await unmount();
   });
 
   it('deactivates keep awake when an active walk ends', async () => {
     mockIsSmellWalkActive = true;
-    let tree: ReactTestRenderer.ReactTestRenderer;
 
-    await ReactTestRenderer.act(() => {
-      tree = ReactTestRenderer.create(<SmellWalkScreen />);
-    });
-
-    mockIsSmellWalkActive = false;
-    await ReactTestRenderer.act(() => {
-      tree!.update(<SmellWalkScreen />);
-    });
+    const { rerender, unmount } = await render(<SmellWalkScreen />);
 
     expect(mockActivateKeepAwake).toHaveBeenCalled();
+
+    mockIsSmellWalkActive = false;
+
+    await rerender(<SmellWalkScreen />);
+
     expect(mockDeactivateKeepAwake).toHaveBeenCalled();
+
+    await unmount();
   });
 
   it('deactivates keep awake when unmounting an active walk', async () => {
     mockIsSmellWalkActive = true;
-    let tree: ReactTestRenderer.ReactTestRenderer;
 
-    await ReactTestRenderer.act(() => {
-      tree = ReactTestRenderer.create(<SmellWalkScreen />);
-    });
-
-    await ReactTestRenderer.act(() => {
-      tree!.unmount();
-    });
+    const { unmount } = await render(<SmellWalkScreen />);
 
     expect(mockActivateKeepAwake).toHaveBeenCalled();
+
+    await unmount();
+
     expect(mockDeactivateKeepAwake).toHaveBeenCalled();
   });
 });
