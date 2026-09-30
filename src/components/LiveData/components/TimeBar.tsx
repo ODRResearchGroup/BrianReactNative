@@ -1,16 +1,18 @@
-import React, { useEffect } from 'react';
-import { View, StyleSheet, Text, Dimensions, Modal } from 'react-native';
-import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-  withTiming,
+import React, { useEffect, useRef } from 'react';
+import {
+  Animated,
+  Dimensions,
   Easing,
-} from 'react-native-reanimated';
+  Modal,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 
 interface TimedProgressBarProps {
   visible: boolean;
   onClose: () => void;
-  onComplete?: () => void; // <-- new callback
+  onComplete?: () => void;
   duration?: number;
 }
 
@@ -20,33 +22,32 @@ export default function TimedProgressBar({
   onComplete,
   duration = 15000,
 }: TimedProgressBarProps) {
-  const progress = useSharedValue(0);
-
-  // Store the window width once
+  const progress = useRef(new Animated.Value(0)).current;
   const screenWidth = Dimensions.get('window').width;
 
   useEffect(() => {
     if (visible) {
-      progress.value = 0; // reset
-      progress.value = withTiming(1, {
+      progress.setValue(0);
+      Animated.timing(progress, {
+        toValue: 1,
         duration,
         easing: Easing.linear,
-      });
+        useNativeDriver: false, // width animation can't use native driver
+      }).start();
 
       const timer = setTimeout(() => {
-        onClose(); // hide progress bar
-        if (onComplete) {
-          onComplete();
-        } // notify parent
+        onClose();
+        onComplete?.();
       }, duration);
 
       return () => clearTimeout(timer);
     }
-  }, [duration, onClose, onComplete, progress, visible]);
+  }, [visible, duration, onClose, onComplete, progress]);
 
-  const animatedStyle = useAnimatedStyle(() => ({
-    width: progress.value * (screenWidth - 40), // use stored width
-  }));
+  const animatedWidth = progress.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, screenWidth - 40],
+  });
 
   return (
     <Modal visible={visible} transparent animationType="fade">
@@ -54,7 +55,9 @@ export default function TimedProgressBar({
         <View style={styles.container}>
           <Text style={styles.label}>Fingerprinting, stay a while...</Text>
           <View style={styles.progressBackground}>
-            <Animated.View style={[styles.progressBar, animatedStyle]} />
+            <Animated.View
+              style={[styles.progressBar, { width: animatedWidth }]}
+            />
           </View>
         </View>
       </View>
