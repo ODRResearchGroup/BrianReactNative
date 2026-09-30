@@ -219,8 +219,14 @@ export default function SmellWalkScreen() {
   };
 
   const handleStartWalk = async () => {
-    if (await requireConnectedDevice()) {
-      startSmellWalk();
+    if (!(await requireConnectedDevice())) {
+      return;
+    }
+
+    try {
+      await startSmellWalk();
+    } catch (error) {
+      Alert.alert('Could not start smell walk', String(error));
     }
   };
 

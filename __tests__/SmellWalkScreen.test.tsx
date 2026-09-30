@@ -32,7 +32,7 @@ jest.mock('../src/services/influx/InfluxDBService', () => ({
     location: null,
     trail: [],
     isSmellWalkActive: mockIsSmellWalkActive,
-    startSmellWalk: jest.fn(),
+    startSmellWalk: jest.fn().mockResolvedValue(undefined),
     stopSmellWalk: jest.fn(),
   }),
 }));
