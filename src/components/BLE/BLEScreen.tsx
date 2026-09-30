@@ -10,60 +10,24 @@ import {
 } from 'react-native';
 import KeepAwake from 'react-native-keep-awake';
 import { useBLE } from '../../BLEUniversal';
+import {
+  BOARD_STATUS_DEFINITIONS,
+  SENSOR_DEFINITIONS,
+  isBoardStatusBitSet,
+} from '../../sensors';
 
 const BLELoggerApp = () => {
   const {
     devices,
     connectedDevice,
+    boardStatus,
     scanForDevices,
     connectToDevice,
     enableNotifications,
+    readBoardStatus,
   } = useBLE();
 
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
-
-  const notificationSpecs = [
-    {
-      serviceUUID: '0000181a-0000-1000-8000-00805f9b34fb',
-      characteristicUUID: '00002bd1-0000-1000-8000-00805f9b34fb',
-      label: 'Methane',
-    },
-    {
-      serviceUUID: '0000181a-0000-1000-8000-00805f9b34fb',
-      characteristicUUID: '00002bd2-0000-1000-8000-00805f9b34fb',
-      label: 'Nitrogen Dioxide',
-    },
-    {
-      serviceUUID: '0000181a-0000-1000-8000-00805f9b34fb',
-      characteristicUUID: '00002bd3-0000-1000-8000-00805f9b34fb',
-      label: 'Voletile Organic Compounds',
-    },
-    {
-      serviceUUID: '0000181a-0000-1000-8000-00805f9b34fb',
-      characteristicUUID: '00002bcf-0000-1000-8000-00805f9b34fb',
-      label: 'Ammonia',
-    },
-    {
-      serviceUUID: 'de664a17-7db4-449f-97ba-5514e19a9d94',
-      characteristicUUID: '6a135b89-f360-4f64-86fc-5a14092034b4',
-      label: 'Formaldehyde',
-    },
-    {
-      serviceUUID: 'de664a17-7db4-449f-97ba-5514e19a9d94',
-      characteristicUUID: '4c28fcb8-d69b-404a-8668-41655d814e7f',
-      label: 'Odor',
-    },
-    {
-      serviceUUID: 'de664a17-7db4-449f-97ba-5514e19a9d94',
-      characteristicUUID: 'f8156843-6d98-4ba2-8014-1cf03d7dedb8',
-      label: 'Ethanol',
-    },
-    {
-      serviceUUID: 'de664a17-7db4-449f-97ba-5514e19a9d94',
-      characteristicUUID: '87dc71bd-29a4-4218-a2a7-83fd2a69cc40',
-      label: 'Hydrogen Sulfide',
-    },
-  ];
 
   const handleConnect = async () => {
     const selectedDevice = devices.find(
@@ -74,8 +38,28 @@ const BLELoggerApp = () => {
     }
 
     try {
-      await connectToDevice(selectedDevice);
-      await enableNotifications(selectedDevice, notificationSpecs);
+      const connectedDeviceInstance = await connectToDevice(selectedDevice);
+      const discoveredPairs = new Set<string>();
+      const services = await connectedDeviceInstance.services();
+      for (const service of services) {
+        const characteristics = await service.characteristics();
+        for (const characteristic of characteristics) {
+          discoveredPairs.add(
+            `${service.uuid.toLowerCase()}:${characteristic.uuid.toLowerCase()}`,
+          );
+        }
+      }
+      const notificationSpecs = SENSOR_DEFINITIONS.filter(sensor =>
+        discoveredPairs.has(
+          `${sensor.serviceUUID.toLowerCase()}:${sensor.characteristicUUID.toLowerCase()}`,
+        ),
+      ).map(sensor => ({
+        serviceUUID: sensor.serviceUUID,
+        characteristicUUID: sensor.characteristicUUID,
+        sensorKey: sensor.key,
+      }));
+      await enableNotifications(connectedDeviceInstance, notificationSpecs);
+      await readBoardStatus(connectedDeviceInstance);
       setSelectedDeviceId(null);
       Alert.alert(
         'Connected',
@@ -152,6 +136,30 @@ const BLELoggerApp = () => {
           <Pressable style={styles.connectButton} onPress={handleConnect}>
             <Text style={styles.connectButtonText}>Connect</Text>
           </Pressable>
+        )}
+
+        {/* Board Status Section (shown once connected) */}
+        {connectedDevice && boardStatus !== null && (
+          <View style={styles.devicesSection}>
+            <Text style={styles.sectionLabel}>HARDWARE STATUS</Text>
+            <View style={styles.devicesList}>
+              {BOARD_STATUS_DEFINITIONS.map(board => {
+                const present = isBoardStatusBitSet(boardStatus, board.bit);
+                return (
+                  <View key={board.bit} style={styles.deviceItem}>
+                    <Text style={styles.deviceName}>{board.label}</Text>
+                    <Text
+                      style={[
+                        styles.deviceStatus,
+                        present && styles.deviceStatusConnected,
+                      ]}>
+                      {present ? 'Detected' : 'Missing'}
+                    </Text>
+                  </View>
+                );
+              })}
+            </View>
+          </View>
         )}
       </ScrollView>
     </SafeAreaView>

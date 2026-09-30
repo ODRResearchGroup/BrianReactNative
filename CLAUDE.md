@@ -76,27 +76,30 @@ Don't change these without a coordinated firmware change.
 - Firmware notifies each channel in turn, then waits 5 s; values arrive one at a time and must be **combined into snapshots** in the app.
 - ESS service `0000181a-0000-1000-8000-00805f9b34fb`; custom service `de664a17-7db4-449f-97ba-5514e19a9d94`.
 
-| Channel               | Characteristic                         | Unit                                     |
-| --------------------- | -------------------------------------- | ---------------------------------------- |
-| CH₄                   | `00002bd1-…` (ESS)                     | V                                        |
-| VOC                   | `00002bd3-…` (ESS)                     | V                                        |
-| NH₃                   | `00002bcf-…` (ESS)                     | V                                        |
-| NO₂                   | `00002bd2-…` (ESS)                     | V                                        |
-| HCHO                  | `6a135b89-f360-4f64-86fc-5a14092034b4` | V                                        |
-| Odor                  | `4c28fcb8-d69b-404a-8668-41655d814e7f` | V                                        |
-| EtOH                  | `f8156843-6d98-4ba2-8014-1cf03d7dedb8` | V                                        |
-| H₂S                   | `87dc71bd-29a4-4218-a2a7-83fd2a69cc40` | V                                        |
-| CO                    | `88f6fa6c-c4e0-4a3d-ba72-f435641251c4` | V                                        |
-| Smoke                 | `cafb955e-6e7b-424b-9e03-6d8d003aa286` | V                                        |
-| H₂                    | `0176655b-0007-4e02-abc1-e9f2d6815f46` | V                                        |
-| Temperature           | `00002a6e-…` (ESS)                     | °C                                       |
-| Pressure              | `00002a6d-…` (ESS)                     | hPa                                      |
-| Humidity              | `00002a6f-…` (ESS)                     | %                                        |
-| Altitude              | `00002a69-…` (ESS)                     | m                                        |
-| BME680 gas resistance | `5b0e3c0b-1a44-4b76-82ee-8c2adc2dd8e9` | Ω                                        |
-| Time sync (write)     | `a1b2c3d4-e5f6-4a5b-8c9d-0e1f2a3b4c5d` | Unix seconds, 8 bytes LE, encrypted link |
+| Channel               | Characteristic                         | Unit                                             |
+| --------------------- | -------------------------------------- | ------------------------------------------------ |
+| CH₄                   | `00002bd1-…` (ESS)                     | V                                                |
+| VOC                   | `00002bd3-…` (ESS)                     | V                                                |
+| NH₃                   | `00002bcf-…` (ESS)                     | V                                                |
+| NO₂                   | `00002bd2-…` (ESS)                     | V                                                |
+| HCHO                  | `6a135b89-f360-4f64-86fc-5a14092034b4` | V                                                |
+| Odor                  | `4c28fcb8-d69b-404a-8668-41655d814e7f` | V                                                |
+| EtOH                  | `f8156843-6d98-4ba2-8014-1cf03d7dedb8` | V                                                |
+| H₂S                   | `87dc71bd-29a4-4218-a2a7-83fd2a69cc40` | V                                                |
+| CO                    | `88f6fa6c-c4e0-4a3d-ba72-f435641251c4` | V                                                |
+| Smoke                 | `cafb955e-6e7b-424b-9e03-6d8d003aa286` | V                                                |
+| H₂                    | `0176655b-0007-4e02-abc1-e9f2d6815f46` | V                                                |
+| Temperature           | `00002a6e-…` (ESS)                     | °C                                               |
+| Pressure              | `00002a6d-…` (ESS)                     | hPa                                              |
+| Humidity              | `00002a6f-…` (ESS)                     | %                                                |
+| Altitude              | `00002a69-…` (ESS)                     | m                                                |
+| BME680 gas resistance | `5b0e3c0b-1a44-4b76-82ee-8c2adc2dd8e9` | Ω                                                |
+| Time sync (write)     | `a1b2c3d4-e5f6-4a5b-8c9d-0e1f2a3b4c5d` | Unix seconds, 8 bytes LE, encrypted link         |
+| Board status          | `407fd299-d6ed-45ed-ab21-437f101c8acd` | 1-byte bitmask, read-only, captured once at boot |
 
 (16-bit UUIDs expand to `0000XXXX-0000-1000-8000-00805f9b34fb`.)
+
+**Board status** (`sensors.ts` → `BOARD_STATUS_CHARACTERISTIC_UUID`/`BOARD_STATUS_DEFINITIONS`): bit _n_ set = that I2C board was detected at boot (bit 0/1/2 = ADS1/ADS2/ADS3, bit 3 = BME680). Not live — the firmware never re-checks after boot, so this won't catch a board failing mid-walk. Read once via `readBoardStatus()` right after connecting (see `BLEScreen.tsx`); it is not a `SENSOR_DEFINITIONS` entry since it isn't a notified sensor value. Battery monitor status is not implemented (separate issue).
 
 ## Known problems and gotchas
 

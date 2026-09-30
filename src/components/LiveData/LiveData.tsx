@@ -26,10 +26,10 @@ import CustomRadarChart from '../common/CustomRadarChart';
 import FingerprintModal from '../common/FingerprintModal';
 import TimedProgressBar from './components/TimeBar';
 import { SensorReadings } from '../../types/fingerprintTypes';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { SensorEvent, emitter } from '../../types/events';
+import { SensorEvent } from '../../types/events';
 import { Alert } from 'react-native';
 import Svg, { Path, Line, Rect } from 'react-native-svg';
+import { useInfluxDB } from '../../services/influx/InfluxDBService';
 
 const { width } = Dimensions.get('window');
 
@@ -55,6 +55,7 @@ interface PlotPoint {
 
 export default function LiveData() {
   const { characteristicValues, connectedDevice } = useBLE();
+  const { walkId } = useInfluxDB();
   const navigation = useNavigation<NavigationProp<{ Device: undefined }>>();
   const [isConnected, setIsConnected] = useState(__DEV__);
 
@@ -68,6 +69,8 @@ export default function LiveData() {
   const nitrogenDioxide = characteristicValues['Nitrogen Dioxide'] || 0;
 
   const [showFingerprintModal, setShowFingerprintModal] = useState(false);
+  const [pendingFingerprint, setPendingFingerprint] =
+    useState<SensorEvent | null>(null);
   const [showTimeBar, setShowTimeBar] = useState(false);
   const [samplingMode, setSamplingMode] = useState<'idle' | 'fingerprint'>(
     'idle',
@@ -264,27 +267,27 @@ export default function LiveData() {
 
     const sum = samples.reduce(
       (accumulated, sample) => ({
-        CH4: accumulated.CH4 + sample.CH4,
-        NH3: accumulated.NH3 + sample.NH3,
-        HCHO: accumulated.HCHO + sample.HCHO,
-        VOC: accumulated.VOC + sample.VOC,
-        Odour: accumulated.Odour + sample.Odour,
-        H2S: accumulated.H2S + sample.H2S,
-        Etoh: accumulated.Etoh + sample.Etoh,
-        NO2: accumulated.NO2 + sample.NO2,
+        CH4: (accumulated.CH4 ?? 0) + (sample.CH4 ?? 0),
+        NH3: (accumulated.NH3 ?? 0) + (sample.NH3 ?? 0),
+        HCHO: (accumulated.HCHO ?? 0) + (sample.HCHO ?? 0),
+        VOC: (accumulated.VOC ?? 0) + (sample.VOC ?? 0),
+        Odour: (accumulated.Odour ?? 0) + (sample.Odour ?? 0),
+        H2S: (accumulated.H2S ?? 0) + (sample.H2S ?? 0),
+        Etoh: (accumulated.Etoh ?? 0) + (sample.Etoh ?? 0),
+        NO2: (accumulated.NO2 ?? 0) + (sample.NO2 ?? 0),
       }),
       { CH4: 0, NH3: 0, HCHO: 0, VOC: 0, Odour: 0, H2S: 0, Etoh: 0, NO2: 0 },
     );
 
     const avg: SensorReadings = {
-      CH4: sum.CH4 / samples.length,
-      NH3: sum.NH3 / samples.length,
-      HCHO: sum.HCHO / samples.length,
-      VOC: sum.VOC / samples.length,
-      Odour: sum.Odour / samples.length,
-      H2S: sum.H2S / samples.length,
-      Etoh: sum.Etoh / samples.length,
-      NO2: sum.NO2 / samples.length,
+      CH4: (sum.CH4 ?? 0) / samples.length,
+      NH3: (sum.NH3 ?? 0) / samples.length,
+      HCHO: (sum.HCHO ?? 0) / samples.length,
+      VOC: (sum.VOC ?? 0) / samples.length,
+      Odour: (sum.Odour ?? 0) / samples.length,
+      H2S: (sum.H2S ?? 0) / samples.length,
+      Etoh: (sum.Etoh ?? 0) / samples.length,
+      NO2: (sum.NO2 ?? 0) / samples.length,
     };
 
     samplingRef.current.samples = [];
@@ -316,27 +319,8 @@ export default function LiveData() {
         },
       } as any;
 
-      const savedData = {
-        fingerprint,
-        location: null,
-        fingerprintTitle: { title: 'Untitled' },
-        humanDescription: { description: '' },
-        photoPath: undefined,
-        deltaReadings: undefined,
-        timestamp: new Date().toISOString(),
-      };
-
-      const key = `sensor_fingerprint_${Date.now()}`;
-      AsyncStorage.setItem(key, JSON.stringify(savedData))
-        .then(() => {
-          emitter.emit('sensor_reading', fingerprint);
-          Alert.alert('Saved', 'Fingerprint saved');
-          setShowFingerprintModal(true);
-        })
-        .catch(err => {
-          console.error('Failed to save fingerprint', err);
-          Alert.alert('Save failed', String(err));
-        });
+      setPendingFingerprint(fingerprint);
+      setShowFingerprintModal(true);
     }
   };
 
@@ -381,7 +365,10 @@ export default function LiveData() {
           visible={showFingerprintModal}
           onClose={() => {
             setShowFingerprintModal(false);
+            setPendingFingerprint(null);
           }}
+          walkId={walkId}
+          initialFingerprint={pendingFingerprint}
         />
 
         <TimedProgressBar

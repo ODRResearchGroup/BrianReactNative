@@ -3,6 +3,10 @@ import { BleManager, Device } from 'react-native-ble-plx';
 import { PermissionsAndroid, Platform } from 'react-native';
 import mitt from 'mitt';
 import { AppEventEmitter, BLEDataUpdated } from './types/events';
+import {
+  BOARD_STATUS_CHARACTERISTIC_UUID,
+  CUSTOM_SERVICE_UUID,
+} from './sensors';
 
 // Create a global event emitter instance
 const eventEmitter: AppEventEmitter = mitt();
@@ -15,16 +19,18 @@ type BLEContextType = {
   devices: Device[];
   connectedDevice: Device | null;
   characteristicValues: { [key: string]: number };
+  boardStatus: number | null;
   scanForDevices: () => void;
-  connectToDevice: (device: Device) => Promise<void>;
+  connectToDevice: (device: Device) => Promise<Device>;
   enableNotifications: (
     device: Device,
     characteristics: {
       serviceUUID: string;
       characteristicUUID: string;
-      label: string;
+      sensorKey: string;
     }[],
   ) => Promise<void>;
+  readBoardStatus: (device: Device) => Promise<number | null>;
   eventEmitter: AppEventEmitter;
 };
 
@@ -37,6 +43,7 @@ export const BLEProvider = ({ children }: { children: React.ReactNode }) => {
   const [characteristicValues, setCharacteristicValues] = useState<{
     [key: string]: number;
   }>({});
+  const [boardStatus, setBoardStatus] = useState<number | null>(null);
 
   useEffect(() => {
     requestPermissions();
@@ -100,16 +107,17 @@ export const BLEProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   // Connect to a device
-  const connectToDevice = async (device: Device) => {
+  const connectToDevice = async (device: Device): Promise<Device> => {
     try {
-      await device.connect();
-      await device.discoverAllServicesAndCharacteristics();
-      await device.requestMTU(256);
+      const connected = await device.connect();
+      const discovered =
+        await connected.discoverAllServicesAndCharacteristics();
+      await discovered.requestMTU(256);
 
-      setConnectedDevice(device);
-      console.log('Connected to', device.name || 'Unnamed Device');
+      setConnectedDevice(discovered);
+      console.log('Connected to', discovered.name || 'Unnamed Device');
 
-      const services = await device.services();
+      const services = await discovered.services();
       for (const service of services) {
         console.log(`Service UUID: ${service.uuid}`);
         const characteristics = await service.characteristics();
@@ -117,8 +125,10 @@ export const BLEProvider = ({ children }: { children: React.ReactNode }) => {
           console.log(`  Characteristic UUID: ${characteristic.uuid}`);
         }
       }
+      return discovered;
     } catch (error) {
       console.error('Connection error:', error);
+      throw error;
     }
   };
 
@@ -128,13 +138,17 @@ export const BLEProvider = ({ children }: { children: React.ReactNode }) => {
     characteristics: {
       serviceUUID: string;
       characteristicUUID: string;
-      label: string;
+      sensorKey: string;
     }[],
   ) => {
-    for (const { serviceUUID, characteristicUUID, label } of characteristics) {
+    for (const {
+      serviceUUID,
+      characteristicUUID,
+      sensorKey,
+    } of characteristics) {
       console.log(
         'Enabling notification for',
-        label,
+        sensorKey,
         serviceUUID,
         characteristicUUID,
       );
@@ -194,7 +208,7 @@ export const BLEProvider = ({ children }: { children: React.ReactNode }) => {
             // Update local state for UI - store raw value directly
             setCharacteristicValues(prev => ({
               ...prev,
-              [label]: voltageValue,
+              [sensorKey]: voltageValue,
             }));
 
             // Emit BLE data updated event for InfluxDB integration
@@ -211,12 +225,39 @@ export const BLEProvider = ({ children }: { children: React.ReactNode }) => {
 
             eventEmitter.emit('ble_data_updated', bleEvent);
 
-            console.log(`${label}: ${voltageValue}`);
+            console.log(`${sensorKey}: ${voltageValue}`);
           },
         );
       } catch (error) {
         console.error('Enable notification error:', error);
       }
+    }
+  };
+
+  // Read the board status bitmask (see BrianHardware CLAUDE.md). This is
+  // captured once at boot on the firmware side and never changes, so a
+  // single read after connecting is enough - no notification is set up.
+  const readBoardStatus = async (device: Device): Promise<number | null> => {
+    try {
+      const characteristic = await device.readCharacteristicForService(
+        CUSTOM_SERVICE_UUID,
+        BOARD_STATUS_CHARACTERISTIC_UUID,
+      );
+      const rawValue = characteristic.value;
+      if (!rawValue) {
+        return null;
+      }
+
+      const binary =
+        typeof atob === 'function'
+          ? atob(rawValue)
+          : Buffer.from(rawValue, 'base64').toString('binary');
+      const byte = binary.charCodeAt(0);
+      setBoardStatus(byte);
+      return byte;
+    } catch (error) {
+      console.error('Read board status error:', error);
+      return null;
     }
   };
 
@@ -227,9 +268,11 @@ export const BLEProvider = ({ children }: { children: React.ReactNode }) => {
         devices,
         connectedDevice,
         characteristicValues,
+        boardStatus,
         scanForDevices,
         connectToDevice,
         enableNotifications,
+        readBoardStatus,
         eventEmitter,
       }}>
       {children}
