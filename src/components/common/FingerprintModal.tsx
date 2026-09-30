@@ -1,4 +1,5 @@
 import React, { useCallback, useState, useRef } from 'react';
+
 import {
   View,
   Text,
@@ -14,10 +15,13 @@ import {
   SafeAreaView,
   Dimensions,
 } from 'react-native';
+
 import CustomRadarChart from './CustomRadarChart';
+
 import Slider from '@react-native-community/slider';
 
 const { width } = Dimensions.get('window');
+
 const SENSOR_ORDER = [
   'CH4',
   'NH3',
@@ -28,6 +32,7 @@ const SENSOR_ORDER = [
   'Etoh',
   'NO2',
 ];
+
 const SENSOR_LABELS = [
   'Ch4',
   'NH3',
@@ -38,34 +43,54 @@ const SENSOR_LABELS = [
   'Etoh',
   'No2',
 ];
+
 import AudioRecorderPlayer from 'react-native-audio-recorder-player';
+
 import { useBLE } from '../../BLEUniversal';
+
 import {
   DocumentDirectoryPath,
   copyFile,
   exists,
   mkdir,
 } from 'react-native-fs';
+
 import Svg, { Path, Rect, Line } from 'react-native-svg';
+
 import useLiveLocation from '../../hooks/useLiveLocation';
+
 import { SensorEvent, emitter } from '../../types/events';
+
 import type { SensorReadings } from '../../types/fingerprintTypes';
+
 import CameraModal from './CameraCapture';
-import { insertSensorRecord, insertCapture } from '../../services/database/db';
-import { enqueueSync } from '../../services/database/db';
+
+import {
+  insertSensorRecord,
+  insertCapture,
+  enqueueSync,
+} from '../../services/database/db';
+
 import { uploadsPrepare } from '../../services/audio/uploadsPrepare';
+
 import {
   uploadAudioToAzure,
   uploadAudioTrackJsonToAzure,
 } from '../../services/audio/audioUpload';
+
 import { notifyUploadComplete } from '../../services/audio/uploadComplete';
+
 import { fetchProcessedStatus } from '../../services/audio/processedStatus';
+
 import {
   fetchProcessedTranscript,
   transcriptToPlainText,
 } from '../../services/audio/processedTranscript';
+
 import 'react-native-get-random-values';
+
 import { v4 as uuidv4 } from 'uuid';
+
 type MicPhase = 'idle' | 'recording' | 'uploading' | 'processing' | 'error';
 
 const MIC_LABEL: Record<MicPhase, string> = {
@@ -101,27 +126,40 @@ export default function FingerprintModal({
   initialFingerprint = null,
 }: FingerprintModalProps) {
   const { characteristicValues } = useBLE();
+
   const { location } = useLiveLocation();
 
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
+
   const [photoPath, setPhotoPath] = useState<string | null>(null);
+
   const [showCamera, setShowCamera] = useState(false);
+
   const [capturedFingerprint, setCapturedFingerprint] =
     useState<SensorEvent | null>(null);
+
   const [micPhase, setMicPhase] = useState<MicPhase>('idle');
+
   const [recordingDuration, setRecordingDuration] = useState('00:00');
 
   const [zoomLevel, setZoomLevel] = useState(1);
+
   const audioRecorderPlayer = useRef(new AudioRecorderPlayer()).current;
+
   const audioPathRef = useRef<string | null>(null);
+
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
   const sensorRecordIdRef = useRef<string>(uuidv4());
+
   const recordingIdRef = useRef<string | null>(null);
+
   const photoCaptureIdRef = useRef<string>(uuidv4());
 
   const createFingerprint = useCallback((): SensorEvent => {
     const hasSensorReadings = Object.keys(characteristicValues).length > 0;
+
     const readings =
       __DEV__ && !hasSensorReadings
         ? developmentReadings
@@ -166,21 +204,25 @@ export default function FingerprintModal({
     const permanentPath = walkId
       ? `${DocumentDirectoryPath}/walks/${walkId}/media/${photoCaptureIdRef.current}.jpg`
       : `${DocumentDirectoryPath}/fingerprint_${Date.now()}.jpg`;
+
     try {
       if (walkId) {
         await ensureDirectory(`${DocumentDirectoryPath}/walks`);
+
         await ensureDirectory(`${DocumentDirectoryPath}/walks/${walkId}`);
+
         await ensureDirectory(`${DocumentDirectoryPath}/walks/${walkId}/media`);
       }
+
       await copyFile(tempPhotoPath, permanentPath);
+
       setPhotoPath(permanentPath);
+
       Alert.alert('Photo captured', 'Photo added to fingerprint');
     } catch (error) {
       Alert.alert('Photo save failed', String(error));
     }
   };
-
-  // ── Mic handlers ─────────────────────────────────────────────────────────────
 
   const handleMicPress = async () => {
     if (micPhase === 'idle' || micPhase === 'error') {
@@ -192,18 +234,21 @@ export default function FingerprintModal({
 
   const startRecording = async () => {
     try {
-      // Pass no path on iOS — custom absolute paths trigger an AVAudioRecorder init bug in v3.5.x
       const uri = await audioRecorderPlayer.startRecorder(undefined);
+
       audioRecorderPlayer.addRecordBackListener(e => {
         setRecordingDuration(
           audioRecorderPlayer.mmss(Math.floor(e.currentPosition / 1000)),
         );
       });
+
       audioPathRef.current = uri;
+
       setRecordingDuration('00:00');
       setMicPhase('recording');
     } catch (err) {
       Alert.alert('Recording failed', String(err));
+
       setMicPhase('error');
     }
   };
@@ -211,41 +256,62 @@ export default function FingerprintModal({
   const stopAndTranscribe = async () => {
     try {
       await audioRecorderPlayer.stopRecorder();
+
       audioRecorderPlayer.removeRecordBackListener();
     } catch {
-      /* already stopped */
+      // Already stopped.
     }
 
     let localUri = audioPathRef.current;
+
     if (!localUri) {
       setMicPhase('idle');
       return;
     }
 
     setMicPhase('uploading');
+
     try {
       const recordingId = uuidv4();
+
       recordingIdRef.current = recordingId;
+
       const startedAtMs = Date.now();
+
       if (walkId) {
         await ensureDirectory(`${DocumentDirectoryPath}/walks`);
+
         await ensureDirectory(`${DocumentDirectoryPath}/walks/${walkId}`);
+
         await ensureDirectory(`${DocumentDirectoryPath}/walks/${walkId}/media`);
+
         const targetPath = `${DocumentDirectoryPath}/walks/${walkId}/media/${recordingId}.m4a`;
+
         await copyFile(localUri.replace(/^file:\/\//, ''), targetPath);
+
         localUri = targetPath;
       }
+
       const prep = await uploadsPrepare(recordingId, 'm4a');
+
       const minimalBundle = {
         schema: 'audio_gps_track_v1' as const,
+
         recording_started_at_ms: startedAtMs,
-        metrics: { minMeters: 3, maxGapMs: 1000 },
+
+        metrics: {
+          minMeters: 3,
+          maxGapMs: 1000,
+        },
+
         points: [],
+
         audio: {
           container: prep.audioUpload.container,
           blobName: prep.audioUpload.blobName,
         },
       };
+
       await Promise.all([
         uploadAudioToAzure(
           localUri,
@@ -253,6 +319,7 @@ export default function FingerprintModal({
           prep.audioUpload.container,
           prep.audioUpload.blobName,
         ),
+
         uploadAudioTrackJsonToAzure(
           minimalBundle,
           prep.bundleUpload.uploadUrl,
@@ -264,9 +331,9 @@ export default function FingerprintModal({
           },
         ),
       ]);
+
       await notifyUploadComplete(recordingId, 'm4a', 'en-US');
 
-      // Persist the capture so the global poller can finish transcription even if modal closes
       await insertCapture({
         id: recordingId,
         sensorRecordId: sensorRecordIdRef.current,
@@ -291,16 +358,19 @@ export default function FingerprintModal({
 
       setMicPhase('processing');
 
-      // Poll locally while modal is still open for a fast in-modal result
       pollRef.current = setInterval(async () => {
         try {
           const status = await fetchProcessedStatus(recordingId);
+
           if (status?.status === 'transcribed') {
             clearPoll();
+
             const transcript = await fetchProcessedTranscript(recordingId);
+
             if (transcript) {
               setDescription(transcriptToPlainText(transcript));
             }
+
             setMicPhase('idle');
             setRecordingDuration('00:00');
           } else if (status?.status === 'failed') {
@@ -313,6 +383,7 @@ export default function FingerprintModal({
       }, 10_000);
     } catch (err) {
       Alert.alert('Transcription failed', String(err));
+
       setMicPhase('error');
     }
   };
@@ -324,21 +395,23 @@ export default function FingerprintModal({
     }
   };
 
-  // ── Save / Cancel ─────────────────────────────────────────────────────────────
-
   const handleSave = async () => {
     if (isBusy) {
       Alert.alert(
         'Transcription in progress',
         'Please wait for the transcription to finish before saving.',
       );
+
       return;
     }
+
     const fingerprint = capturedFingerprint || createFingerprint();
+
     const r = (fingerprint.olfactoryData?.readings ?? {}) as Record<
       string,
       number
     >;
+
     const id = sensorRecordIdRef.current;
 
     try {
@@ -354,14 +427,16 @@ export default function FingerprintModal({
         latitude: location?.latitude ?? null,
         longitude: location?.longitude ?? null,
         accuracyM: null,
-        ch4: r.CH4,
-        nh3: r.NH3,
-        hcho: r.HCHO,
-        voc: r.VOC,
-        odour: r.Odour,
-        h2s: r.H2S,
-        etoh: r.Etoh,
-        no2: r.NO2,
+
+        ch4: r.CH4 ?? null,
+        nh3: r.NH3 ?? null,
+        hcho: r.HCHO ?? null,
+        voc: r.VOC ?? null,
+        odour: r.Odour ?? null,
+        h2s: r.H2S ?? null,
+        etoh: r.Etoh ?? null,
+        no2: r.NO2 ?? null,
+
         co: null,
         smoke: null,
         h2: null,
@@ -370,6 +445,7 @@ export default function FingerprintModal({
         humidity: null,
         altitude: null,
         bme680GasResistance: null,
+
         deltaCh4: null,
         deltaNh3: null,
         deltaHcho: null,
@@ -378,9 +454,20 @@ export default function FingerprintModal({
         deltaH2s: null,
         deltaEtoh: null,
         deltaNo2: null,
+
+        /*
+         * Required by SensorRecord because Influx sync status
+         * is now tracked separately from the normal local DB
+         * sync status.
+         */
+        influxStatus: 'pending',
+        influxSyncedAt: null,
+        influxLastError: null,
       });
+
       if (photoPath) {
         const photoCaptureId = photoCaptureIdRef.current;
+
         await insertCapture({
           id: photoCaptureId,
           sensorRecordId: id,
@@ -402,6 +489,7 @@ export default function FingerprintModal({
           capturedAt: Date.now(),
           annotationIndex: null,
         });
+
         await enqueueSync({
           id: uuidv4(),
           entityType: 'capture',
@@ -434,7 +522,9 @@ export default function FingerprintModal({
       });
 
       emitter.emit('sensor_reading', fingerprint);
+
       Alert.alert('Saved', 'Fingerprint saved successfully!');
+
       handleCancel();
     } catch (err) {
       Alert.alert('Save failed', String(err));
@@ -443,20 +533,28 @@ export default function FingerprintModal({
 
   const handleCancel = async () => {
     clearPoll();
+
     if (micPhase === 'recording') {
       await audioRecorderPlayer.stopRecorder().catch(() => {});
+
       audioRecorderPlayer.removeRecordBackListener();
     }
+
     setTitle('');
     setDescription('');
     setPhotoPath(null);
     setMicPhase('idle');
     setRecordingDuration('00:00');
+
     audioPathRef.current = null;
     recordingIdRef.current = null;
+
     sensorRecordIdRef.current = uuidv4();
+
     photoCaptureIdRef.current = uuidv4();
+
     setCapturedFingerprint(null);
+
     onClose();
   };
 
@@ -467,7 +565,9 @@ export default function FingerprintModal({
   }, [capturedFingerprint, createFingerprint, initialFingerprint, visible]);
 
   const isBusy = micPhase === 'uploading' || micPhase === 'processing';
+
   const statusLabel = MIC_LABEL[micPhase];
+
   const micIconColor = micPhase === 'error' ? '#ff3b30' : '#333';
 
   return (
@@ -489,11 +589,14 @@ export default function FingerprintModal({
               style={styles.headerButton}>
               <Text style={styles.cancelText}>Cancel</Text>
             </TouchableOpacity>
+
             <Text style={styles.headerTitle}>Fingerprint</Text>
+
             <TouchableOpacity onPress={handleSave} style={styles.headerButton}>
               <Text style={styles.saveText}>Save</Text>
             </TouchableOpacity>
           </View>
+
           <KeyboardAvoidingView
             behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
             style={styles.container}>
@@ -506,7 +609,9 @@ export default function FingerprintModal({
                   value={title}
                   onChangeText={setTitle}
                 />
+
                 <View style={styles.divider} />
+
                 <View style={styles.noteBar}>
                   <TextInput
                     style={styles.noteInput}
@@ -519,6 +624,7 @@ export default function FingerprintModal({
                     textAlignVertical="top"
                     editable={!isBusy}
                   />
+
                   <TouchableOpacity
                     style={[
                       styles.micButton,
@@ -551,6 +657,7 @@ export default function FingerprintModal({
                               : micIconColor
                           }
                         />
+
                         <Path
                           d="M19 10v2a7 7 0 0 1-14 0v-2"
                           stroke={
@@ -564,6 +671,7 @@ export default function FingerprintModal({
                           strokeLinecap="round"
                           fill="none"
                         />
+
                         <Line
                           x1="12"
                           y1="19"
@@ -579,6 +687,7 @@ export default function FingerprintModal({
                           strokeWidth="2"
                           strokeLinecap="round"
                         />
+
                         <Line
                           x1="8"
                           y1="23"
@@ -604,6 +713,7 @@ export default function FingerprintModal({
                     {micPhase === 'recording' && (
                       <View style={styles.recordingDot} />
                     )}
+
                     <Text
                       style={[
                         styles.statusText,
@@ -621,6 +731,7 @@ export default function FingerprintModal({
                 style={styles.photoButton}
                 onPress={() => setShowCamera(true)}>
                 <Text style={styles.photoButtonText}>Take photo</Text>
+
                 <View style={styles.photoIconContainer}>
                   <Text style={styles.photoIcon}>📷</Text>
                 </View>
@@ -629,10 +740,13 @@ export default function FingerprintModal({
               {photoPath && (
                 <View style={styles.photoPreviewContainer}>
                   <Image
-                    source={{ uri: `file://${photoPath}` }}
+                    source={{
+                      uri: `file://${photoPath}`,
+                    }}
                     style={styles.photoPreview}
                     resizeMode="cover"
                   />
+
                   <TouchableOpacity
                     style={styles.removePhotoButton}
                     onPress={() => setPhotoPath(null)}>
@@ -641,14 +755,15 @@ export default function FingerprintModal({
                 </View>
               )}
 
-              {/* Radar Chart */}
               {capturedFingerprint &&
                 (() => {
                   const r = capturedFingerprint.olfactoryData?.readings ?? {};
+
                   const radarData = SENSOR_ORDER.map((key, idx) => ({
                     x: SENSOR_LABELS[idx],
                     y: Number((r as any)[key]) || 0,
                   }));
+
                   const chartData = [
                     {
                       key: 'live',
@@ -660,6 +775,7 @@ export default function FingerprintModal({
                       },
                     },
                   ];
+
                   return (
                     <View style={styles.chartCard}>
                       <CustomRadarChart
@@ -669,6 +785,7 @@ export default function FingerprintModal({
                         gridLevels={5}
                         zoomLevel={zoomLevel}
                       />
+
                       <Slider
                         style={styles.slider}
                         minimumValue={1}
@@ -678,6 +795,7 @@ export default function FingerprintModal({
                         minimumTrackTintColor="#333"
                         maximumTrackTintColor="#ccc"
                       />
+
                       <Text style={styles.sliderLabel}>
                         Zoom: {zoomLevel.toFixed(1)}×
                       </Text>
@@ -693,8 +811,15 @@ export default function FingerprintModal({
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f5f5f5' },
-  scrollContent: { padding: 0 },
+  container: {
+    flex: 1,
+    backgroundColor: '#f5f5f5',
+  },
+
+  scrollContent: {
+    padding: 0,
+  },
+
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -705,15 +830,29 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#e0e0e0',
   },
-  headerButton: { minWidth: 60 },
-  headerTitle: { fontSize: 18, fontWeight: '600', color: '#000' },
-  cancelText: { fontSize: 16, color: '#000' },
+
+  headerButton: {
+    minWidth: 60,
+  },
+
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#000',
+  },
+
+  cancelText: {
+    fontSize: 16,
+    color: '#000',
+  },
+
   saveText: {
     fontSize: 16,
     color: '#007AFF',
     fontWeight: '600',
     textAlign: 'right',
   },
+
   inputCard: {
     backgroundColor: '#fff',
     marginHorizontal: 16,
@@ -721,24 +860,35 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 16,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
+    shadowOffset: {
+      width: 0,
+      height: 1,
+    },
     shadowOpacity: 0.1,
     shadowRadius: 3,
     elevation: 2,
   },
+
   titleInput: {
     fontSize: 16,
     fontWeight: '600',
     color: '#000',
     paddingVertical: 8,
   },
-  divider: { height: 1, backgroundColor: '#e0e0e0', marginVertical: 8 },
+
+  divider: {
+    height: 1,
+    backgroundColor: '#e0e0e0',
+    marginVertical: 8,
+  },
+
   noteBar: {
     flexDirection: 'row',
     alignItems: 'flex-end',
     gap: 8,
     paddingTop: 4,
   },
+
   noteInput: {
     flex: 1,
     fontSize: 15,
@@ -747,6 +897,7 @@ const styles = StyleSheet.create({
     minHeight: 60,
     maxHeight: 120,
   },
+
   micButton: {
     width: 36,
     height: 36,
@@ -756,31 +907,46 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 4,
   },
+
   micButtonRecording: {
     backgroundColor: '#fff0f0',
     borderWidth: 1,
     borderColor: '#ff3b30',
   },
+
   micButtonError: {
     backgroundColor: '#fff0f0',
     borderWidth: 1,
     borderColor: '#ff3b30',
   },
-  micButtonBusy: { opacity: 0.4 },
+
+  micButtonBusy: {
+    opacity: 0.4,
+  },
+
   statusRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
     marginTop: 6,
   },
+
   recordingDot: {
     width: 8,
     height: 8,
     borderRadius: 4,
     backgroundColor: '#ff3b30',
   },
-  statusText: { fontSize: 13, color: '#007AFF' },
-  statusTextError: { color: '#ff3b30' },
+
+  statusText: {
+    fontSize: 13,
+    color: '#007AFF',
+  },
+
+  statusTextError: {
+    color: '#ff3b30',
+  },
+
   photoButton: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -791,12 +957,20 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 16,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
+    shadowOffset: {
+      width: 0,
+      height: 1,
+    },
     shadowOpacity: 0.1,
     shadowRadius: 3,
     elevation: 2,
   },
-  photoButtonText: { fontSize: 16, color: '#000' },
+
+  photoButtonText: {
+    fontSize: 16,
+    color: '#000',
+  },
+
   photoIconContainer: {
     width: 32,
     height: 32,
@@ -805,7 +979,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  photoIcon: { fontSize: 18 },
+
+  photoIcon: {
+    fontSize: 18,
+  },
+
   photoPreviewContainer: {
     marginHorizontal: 16,
     marginTop: 20,
@@ -813,7 +991,13 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     position: 'relative',
   },
-  photoPreview: { width: '100%', height: 250, backgroundColor: '#f0f0f0' },
+
+  photoPreview: {
+    width: '100%',
+    height: 250,
+    backgroundColor: '#f0f0f0',
+  },
+
   removePhotoButton: {
     position: 'absolute',
     top: 12,
@@ -825,7 +1009,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  removePhotoText: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
+
+  removePhotoText: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+
   chartCard: {
     backgroundColor: '#fff',
     marginHorizontal: 16,
@@ -835,12 +1025,29 @@ const styles = StyleSheet.create({
     padding: 16,
     alignItems: 'center',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
+    shadowOffset: {
+      width: 0,
+      height: 1,
+    },
     shadowOpacity: 0.1,
     shadowRadius: 3,
     elevation: 2,
   },
-  modalContent: { flex: 1, backgroundColor: '#fff' },
-  slider: { width: '80%', height: 40, marginTop: 8 },
-  sliderLabel: { fontSize: 12, color: '#666', marginTop: 2 },
+
+  modalContent: {
+    flex: 1,
+    backgroundColor: '#fff',
+  },
+
+  slider: {
+    width: '80%',
+    height: 40,
+    marginTop: 8,
+  },
+
+  sliderLabel: {
+    fontSize: 12,
+    color: '#666',
+    marginTop: 2,
+  },
 });

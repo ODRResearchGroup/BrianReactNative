@@ -44,6 +44,9 @@ export type SensorRecord = {
   deltaNo2: number | null;
   syncStatus: 'pending' | 'synced' | 'failed';
   syncedAt: number | null;
+  influxStatus: 'pending' | 'synced' | 'failed';
+  influxSyncedAt: number | null;
+  influxLastError: string | null;
 };
 
 export type CaptureRow = {
@@ -375,6 +378,22 @@ async function getDb(): Promise<SQLite.SQLiteDatabase> {
       );
     } catch {}
     try {
+      await db.executeSql(
+        "ALTER TABLE sensor_records ADD COLUMN influx_status TEXT NOT NULL DEFAULT 'pending';",
+      );
+    } catch {}
+
+    try {
+      await db.executeSql(
+        'ALTER TABLE sensor_records ADD COLUMN influx_synced_at INTEGER;',
+      );
+    } catch {}
+    try {
+      await db.executeSql(
+        'ALTER TABLE sensor_records ADD COLUMN influx_last_error TEXT;',
+      );
+    } catch {}
+    try {
       await db.executeSql('ALTER TABLE walks ADD COLUMN resumed_at INTEGER;');
     } catch {}
     await migrateSensorRecordsSchemaForNullableChannels(db);
@@ -572,6 +591,58 @@ export async function listSensorRecordsByWalkId(
   return rows;
 }
 
+export async function listPendingInfluxSensorRecords(
+  limit = 50,
+): Promise<SensorRecord[]> {
+  const db = await getDb();
+
+  const [res] = await db.executeSql(
+    `SELECT *
+     FROM sensor_records
+     WHERE record_type = 'walk_sample'
+       AND influx_status != 'synced'
+     ORDER BY recordedAt ASC
+     LIMIT ?;`,
+    [limit],
+  );
+
+  const rows: SensorRecord[] = [];
+
+  for (let i = 0; i < res.rows.length; i++) {
+    rows.push(mapSensorRecord(res.rows.item(i)));
+  }
+
+  return rows;
+}
+
+export async function markSensorRecordInfluxSynced(id: string): Promise<void> {
+  const db = await getDb();
+
+  await db.executeSql(
+    `UPDATE sensor_records
+     SET influx_status = 'synced',
+         influx_synced_at = ?,
+         influx_last_error = NULL
+     WHERE id = ?;`,
+    [Date.now(), id],
+  );
+}
+
+export async function markSensorRecordInfluxFailed(
+  id: string,
+  error?: string,
+): Promise<void> {
+  const db = await getDb();
+
+  await db.executeSql(
+    `UPDATE sensor_records
+     SET influx_status = 'failed',
+         influx_last_error = ?
+     WHERE id = ?;`,
+    [error ?? null, id],
+  );
+}
+
 export async function listFingerprintsByWalkId(
   walkId: string,
 ): Promise<SensorRecord[]> {
@@ -680,6 +751,15 @@ function mapSensorRecord(r: any): SensorRecord {
     deltaNo2: r.delta_no2 ?? null,
     syncStatus: r.sync_status,
     syncedAt: r.synced_at ?? null,
+    influxStatus:
+      r.influx_status === 'synced'
+        ? 'synced'
+        : r.influx_status === 'failed'
+        ? 'failed'
+        : 'pending',
+
+    influxSyncedAt: r.influx_synced_at ?? null,
+    influxLastError: r.influx_last_error ?? null,
   };
 }
 
