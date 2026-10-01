@@ -194,12 +194,23 @@ export default function SmellWalkScreen() {
   const handleStopWalk = async () => {
     try {
       const completedWalkId = await stopSmellWalk();
-      if (completedWalkId) {
+
+      if (!completedWalkId) {
+        return;
+      }
+
+      try {
         const savedPath = await exportSmellWalkZip(completedWalkId);
         Alert.alert('Smell walk saved', `Walk export saved to:\n${savedPath}`);
+      } catch (exportError) {
+        console.error('Smell walk export failed:', exportError);
+        Alert.alert(
+          'Walk stopped',
+          'The smell walk was saved, but the export could not be shared.',
+        );
       }
     } catch (error) {
-      Alert.alert('Could not save smell walk', String(error));
+      Alert.alert('Could not stop smell walk', String(error));
     }
   };
 
