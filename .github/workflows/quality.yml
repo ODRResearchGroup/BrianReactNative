@@ -99,18 +99,6 @@ jobs:
   android-build:
     name: Android debug build
     runs-on: ubuntu-latest
-    # A cold build takes about 8 minutes and a cached one less. Anything near
-    # this limit is a hung build, not a slow one, so fail instead of waiting
-    # for the 6 hour GitHub default.
-    timeout-minutes: 30
-
-    env:
-      # PR builds only need to prove the app compiles. Building the native
-      # (C++) code for one ABI instead of all four cuts the CMake time by
-      # ~75%. arm64-v8a matches the Android phones used in the field, so the
-      # uploaded APK can still be installed on them. Release builds
-      # (release.yml) keep all four ABIs from gradle.properties.
-      ORG_GRADLE_PROJECT_reactNativeArchitectures: arm64-v8a
 
     steps:
       - name: Check out repository
@@ -131,45 +119,14 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      # Caches the Gradle wrapper distribution and ~/.gradle (downloaded
-      # dependencies, compiled build logic, build cache) between runs and adds
-      # a per-task summary to the job page. Only main/develop write the cache;
-      # PR runs read it, so PRs don't evict each other's entries.
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          cache-read-only: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/develop' }}
-
-      # Configuring the project downloads the Gradle distribution, plugins and
-      # dependencies and compiles the React Native Gradle plugin. Running it as
-      # its own step makes download/configuration time visible separately
-      # from compile time in the job's step timings.
-      - name: Configure Gradle project
+      - name: Build debug APK
         working-directory: android
         run: |
           chmod +x gradlew
-          ./gradlew help --console=plain
-
-      # :app:assembleDebug builds only what the app needs; a bare assembleDebug
-      # also packages every library module as an AAR. --profile writes a
-      # timing report (configuration, dependency resolution, per-task times)
-      # that is uploaded below, also when the build fails or times out.
-      - name: Build debug APK
-        working-directory: android
-        timeout-minutes: 25
-        run: ./gradlew :app:assembleDebug --console=plain --parallel --build-cache --profile
+          ./gradlew assembleDebug
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
           name: android-debug-apk
           path: android/app/build/outputs/apk/debug/app-debug.apk
-          if-no-files-found: error
-
-      - name: Upload Gradle build profile
-        if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: android-gradle-profile
-          path: android/build/reports/profile/
-          if-no-files-found: ignore

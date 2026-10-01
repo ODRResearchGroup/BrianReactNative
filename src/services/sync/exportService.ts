@@ -106,7 +106,10 @@ function csvValue(value: string | number | null | undefined): string {
   return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 }
 
-export async function exportSmellWalkCsv(walkId: string): Promise<string> {
+async function writeSmellWalkCsvFile(walkId: string): Promise<{
+  fileName: string;
+  csvPath: string;
+}> {
   const records = await listSensorRecordsByWalkId(walkId);
   const headers = [
     'walk_id',
@@ -167,6 +170,13 @@ export async function exportSmellWalkCsv(walkId: string): Promise<string> {
 
   await RNFS.mkdir(EXPORT_DIR);
   await RNFS.writeFile(csvPath, `\ufeff${lines.join('\n')}\n`, 'utf8');
+
+  return { fileName, csvPath };
+}
+
+export async function exportSmellWalkCsv(walkId: string): Promise<string> {
+  const { fileName, csvPath } = await writeSmellWalkCsvFile(walkId);
+
   if (Platform.OS === 'android') {
     return ReactNativeBlobUtil.MediaCollection.copyToMediaStore(
       { name: fileName, parentFolder: 'SmellWalk', mimeType: 'text/csv' },
@@ -189,7 +199,7 @@ export async function exportSmellWalkZip(walkId: string): Promise<string> {
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
   const stagingDir = `${EXPORT_DIR}/walk_${walkId}_${timestamp}`;
   const mediaDir = `${stagingDir}/media`;
-  const csvPath = await exportSmellWalkCsv(walkId);
+  const { csvPath } = await writeSmellWalkCsvFile(walkId);
   const csvContents = await RNFS.readFile(csvPath, 'utf8');
   const [samples, fingerprints, captures, annotations] = await Promise.all([
     listSensorRecordsByWalkId(walkId),
@@ -241,6 +251,19 @@ export async function exportSmellWalkZip(walkId: string): Promise<string> {
   const zipPath = `${EXPORT_DIR}/smellwalk_${walkId}_${timestamp}.zip`;
   await zip(stagingDir, zipPath);
   await RNFS.unlink(stagingDir).catch(() => {});
+
+  if (Platform.OS === 'android') {
+    return ReactNativeBlobUtil.MediaCollection.copyToMediaStore(
+      {
+        name: `smellwalk_${walkId}_${timestamp}.zip`,
+        parentFolder: 'SmellWalk',
+        mimeType: 'application/zip',
+      },
+      'Download',
+      zipPath,
+    );
+  }
+
   await Share.open({
     title: 'Save Smell Walk Export',
     url: `file://${zipPath}`,
