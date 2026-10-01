@@ -55,25 +55,31 @@ export const BLEProvider = ({ children }: { children: React.ReactNode }) => {
 
   // Request Android permissions
   const requestPermissions = async () => {
-    if (Platform.OS === 'android') {
-      const permissions = [
-        PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
+    if (Platform.OS !== 'android') {
+      return;
+    }
+
+    const permissions: string[] = [
+      PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
+    ];
+
+    if (Platform.Version >= 31) {
+      permissions.push(
         PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN,
-      ];
+        PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT,
+      );
+    }
 
-      if (Platform.Version >= 31) {
-        permissions.push(PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT);
-      }
+    const granted = await PermissionsAndroid.requestMultiple(
+      permissions as any[],
+    );
 
-      const granted = await PermissionsAndroid.requestMultiple(permissions);
+    const denied = Object.values(granted).some(
+      result => result !== PermissionsAndroid.RESULTS.GRANTED,
+    );
 
-      if (
-        Object.values(granted).some(
-          result => result !== PermissionsAndroid.RESULTS.GRANTED,
-        )
-      ) {
-        console.warn('Required BLE permissions not granted');
-      }
+    if (denied) {
+      console.warn('Required BLE permissions not granted');
     }
   };
 

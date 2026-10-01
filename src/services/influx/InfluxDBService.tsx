@@ -25,6 +25,17 @@ import {
 import { INFLUX_CONFIG } from './config';
 import { InfluxClient } from './client';
 import { InfluxPoint } from './types';
+import {
+  clearActiveWalkId,
+  getActiveWalkId,
+  saveActiveWalkId,
+} from '../background/SmellWalkBackgroundState';
+
+import {
+  requestForegroundServicePermission,
+  startSmellWalkForegroundService,
+  stopSmellWalkForegroundService,
+} from '../background/SmellWalkForegroundService';
 
 export type LiveLocation = {
   latitude: number;
@@ -39,7 +50,7 @@ type InfluxDBContextType = {
   trail: LiveLocation[];
   isSmellWalkActive: boolean;
   walkId: string | null;
-  startSmellWalk: (existingWalkId?: string) => void;
+  startSmellWalk: (existingWalkId?: string) => Promise<void>;
   stopSmellWalk: () => Promise<string | null>;
 };
 
@@ -139,17 +150,9 @@ export const InfluxDBProvider = ({
 
   const walkReadingsRef = useRef<Record<string, number>>({});
   const walkDeviceIdRef = useRef('unknown');
+  const lastWalkFlushAtRef = useRef(0);
 
   const walkTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  useEffect(() => {
-    interruptActiveWalks(Date.now()).catch(error => {
-      console.warn(
-        'Failed to mark previously active walks as interrupted:',
-        error,
-      );
-    });
-  }, []);
 
   useEffect(() => {
     let watchId: number | null = null;
@@ -165,10 +168,20 @@ export const InfluxDBProvider = ({
           console.warn('Location permission denied; sensor data will omit GPS');
           return;
         }
+
+        if (Platform.Version >= 29) {
+          const backgroundPermission = await PermissionsAndroid.request(
+            PermissionsAndroid.PERMISSIONS.ACCESS_BACKGROUND_LOCATION,
+          );
+
+          if (backgroundPermission !== PermissionsAndroid.RESULTS.GRANTED) {
+            console.warn(
+              'Background location permission denied; background GPS data will be unavailable',
+            );
+          }
+        }
       } else {
-        const authorization = await Geolocation.requestAuthorization(
-          'whenInUse',
-        );
+        const authorization = await Geolocation.requestAuthorization('always');
 
         if (authorization !== 'granted') {
           console.warn('Location permission denied; sensor data will omit GPS');
@@ -206,6 +219,7 @@ export const InfluxDBProvider = ({
           fastestInterval: 1000,
           forceRequestLocation: true,
           showLocationDialog: true,
+          showsBackgroundLocationIndicator: true,
         },
       );
     };
@@ -363,10 +377,77 @@ export const InfluxDBProvider = ({
     }
   }, []);
 
+  const startWalkFlushTimer = useCallback(() => {
+    if (walkTimerRef.current !== null) {
+      return;
+    }
+
+    walkTimerRef.current = setInterval(() => {
+      flushWalkData().catch(error => {
+        console.error('Error flushing smell walk data:', error);
+      });
+    }, 5000);
+  }, [flushWalkData]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const restoreRecordingState = async () => {
+      try {
+        const activeWalkId = await getActiveWalkId();
+
+        if (cancelled) {
+          return;
+        }
+
+        if (!activeWalkId) {
+          await interruptActiveWalks(Date.now());
+          return;
+        }
+
+        console.log(
+          `Restoring active smell walk from background: ${activeWalkId}`,
+        );
+
+        walkIdRef.current = activeWalkId;
+        isSmellWalkActiveRef.current = true;
+
+        setWalkId(activeWalkId);
+        setIsSmellWalkActive(true);
+
+        await reactivateWalk(activeWalkId);
+
+        if (Platform.OS === 'android') {
+          await startSmellWalkForegroundService(activeWalkId);
+        }
+
+        startWalkFlushTimer();
+      } catch (error) {
+        console.error('Unable to restore background smell walk:', error);
+      }
+    };
+
+    restoreRecordingState();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [startWalkFlushTimer]);
+
   const startSmellWalk = useCallback(
-    (existingWalkId?: string) => {
+    async (existingWalkId?: string): Promise<void> => {
       if (isSmellWalkActiveRef.current) {
         return;
+      }
+
+      if (Platform.OS === 'android') {
+        const notificationsAllowed = await requestForegroundServicePermission();
+
+        if (!notificationsAllowed) {
+          console.warn(
+            'Notification permission denied. Background recording may not be visible to the user.',
+          );
+        }
       }
 
       const nextWalkId = existingWalkId ?? `walk-${Date.now()}`;
@@ -374,24 +455,27 @@ export const InfluxDBProvider = ({
       walkIdRef.current = nextWalkId;
       walkReadingsRef.current = {};
       walkDeviceIdRef.current = 'unknown';
+      lastWalkFlushAtRef.current = Date.now();
 
-      const persistWalk = existingWalkId
-        ? reactivateWalk(nextWalkId)
-        : upsertWalk({
-            id: nextWalkId,
-            deviceId: 'unknown',
-            deviceName: null,
-            startedAt: Date.now(),
-            resumedAt: null,
-            endedAt: null,
-            status: 'active',
-            appVersion: null,
-            notes: null,
-          });
+      const now = Date.now();
 
-      persistWalk.catch(error => {
-        console.warn('Unable to persist active walk metadata:', error);
-      });
+      if (existingWalkId) {
+        await reactivateWalk(nextWalkId);
+      } else {
+        await upsertWalk({
+          id: nextWalkId,
+          deviceId: 'unknown',
+          deviceName: null,
+          startedAt: now,
+          resumedAt: null,
+          endedAt: null,
+          status: 'active',
+          appVersion: null,
+          notes: null,
+        });
+      }
+
+      await saveActiveWalkId(nextWalkId);
 
       isSmellWalkActiveRef.current = true;
 
@@ -399,13 +483,15 @@ export const InfluxDBProvider = ({
       setTrail(latestLocationRef.current ? [latestLocationRef.current] : []);
       setIsSmellWalkActive(true);
 
-      walkTimerRef.current = setInterval(() => {
-        flushWalkData().catch(error => {
-          console.error('Error flushing smell walk data:', error);
-        });
-      }, 5000);
+      try {
+        await startSmellWalkForegroundService(nextWalkId);
+      } catch (error) {
+        console.error('Unable to start smell walk foreground service:', error);
+      }
+
+      startWalkFlushTimer();
     },
-    [flushWalkData],
+    [startWalkFlushTimer],
   );
 
   const stopSmellWalk = useCallback(async (): Promise<string | null> => {
@@ -423,29 +509,30 @@ export const InfluxDBProvider = ({
       walkTimerRef.current = null;
     }
 
-    /*
-     * Flush any readings collected since the last 5-second interval.
-     */
-    await flushWalkData();
+    try {
+      await flushWalkData();
 
-    if (completedWalkId) {
-      await completeWalk(completedWalkId, Date.now());
+      if (completedWalkId) {
+        await completeWalk(completedWalkId, Date.now());
+      }
+    } finally {
+      await clearActiveWalkId().catch(error => {
+        console.warn('Unable to clear active smell walk state:', error);
+      });
+
+      await stopSmellWalkForegroundService().catch(error => {
+        console.warn('Unable to stop smell walk foreground service:', error);
+      });
+
+      walkIdRef.current = null;
+      lastWalkFlushAtRef.current = 0;
+
+      setWalkId(null);
+      setTrail([]);
     }
-
-    walkIdRef.current = null;
-    setWalkId(null);
 
     return completedWalkId;
   }, [flushWalkData]);
-
-  useEffect(
-    () => () => {
-      if (walkTimerRef.current !== null) {
-        clearInterval(walkTimerRef.current);
-      }
-    },
-    [],
-  );
 
   /*
    * BLE -> SensorEvent
@@ -523,6 +610,14 @@ export const InfluxDBProvider = ({
           }
         },
       );
+
+      const now = Date.now();
+      if (now - lastWalkFlushAtRef.current >= 5000) {
+        lastWalkFlushAtRef.current = now;
+        flushWalkData().catch(error => {
+          console.error('Error flushing background smell walk data:', error);
+        });
+      }
     };
 
     eventEmitter.on('ble_data_updated', handleBLEUpdate);
@@ -534,7 +629,7 @@ export const InfluxDBProvider = ({
 
       eventEmitter.off('sensor_reading', handleSensorReading);
     };
-  }, []);
+  }, [flushWalkData]);
 
   return (
     <InfluxDBContext.Provider

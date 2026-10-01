@@ -59,5 +59,14 @@
 	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<false/>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>bluetooth-central</string>
+		<string>location</string>
+	</array>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>
+	BRIAN uses your location during an active smell walk so sensor measurements can continue to be associated with GPS coordinates while the app is in the background.
+	</string>
 </dict>
 </plist>
