@@ -61,6 +61,19 @@ Configure these GitHub Actions secrets before the first release:
 The same keystore must be used for every release or Android will reject the APK
 as an update to an already-installed app.
 
+### Pull request checks
+
+`.github/workflows/quality.yml` runs lint, typecheck, format, Jest and an
+Android debug build on every pull request. To keep the Android job short it
+builds native code for `arm64-v8a` only (release builds still include all
+four ABIs from `android/gradle.properties`), builds `:app:assembleDebug` rather
+than every library AAR, and caches Gradle with `gradle/actions/setup-gradle`
+(written on `main`/`develop`, read-only on PRs). The job has a 30-minute
+timeout so a hung build fails instead of running for hours. Step timings show
+configuration/dependency download ("Configure Gradle project") separately from
+compilation ("Build debug APK"), and each run uploads a Gradle `--profile`
+report (`android-gradle-profile` artifact) with per-task timings.
+
 On Windows, keep this project in a short, non-OneDrive path such as
 `C:/ODR/BrianReactNative`. React Native's New Architecture and Reanimated use
 CMake paths that exceed Windows' 260-character limit in the current location.
