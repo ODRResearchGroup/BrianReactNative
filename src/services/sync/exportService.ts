@@ -251,6 +251,19 @@ export async function exportSmellWalkZip(walkId: string): Promise<string> {
   const zipPath = `${EXPORT_DIR}/smellwalk_${walkId}_${timestamp}.zip`;
   await zip(stagingDir, zipPath);
   await RNFS.unlink(stagingDir).catch(() => {});
+
+  if (Platform.OS === 'android') {
+    return ReactNativeBlobUtil.MediaCollection.copyToMediaStore(
+      {
+        name: `smellwalk_${walkId}_${timestamp}.zip`,
+        parentFolder: 'SmellWalk',
+        mimeType: 'application/zip',
+      },
+      'Download',
+      zipPath,
+    );
+  }
+
   await Share.open({
     title: 'Save Smell Walk Export',
     url: `file://${zipPath}`,

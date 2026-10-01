@@ -37,9 +37,12 @@ jest.mock('../src/services/influx/InfluxDBService', () => ({
   }),
 }));
 
-jest.mock('../src/components/common/LiveLocationMap', () => () => null);
+jest.mock('../src/services/database/db', () => ({
+  finalizeInterruptedWalk: jest.fn().mockResolvedValue(undefined),
+  listInterruptedWalks: jest.fn().mockResolvedValue([]),
+}));
 
-jest.mock('../src/components/common/CustomRadarChart', () => () => null);
+jest.mock('../src/components/common/LiveLocationMap', () => () => null);
 
 jest.mock('../src/components/common/FingerprintModal', () => () => null);
 

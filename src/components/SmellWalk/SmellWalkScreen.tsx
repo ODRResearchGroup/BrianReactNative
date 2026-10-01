@@ -9,10 +9,8 @@ import {
   Text,
   View,
 } from 'react-native';
-import Slider from '@react-native-community/slider';
 import KeepAwake from 'react-native-keep-awake';
 import { useBLE } from '../../BLEUniversal';
-import CustomRadarChart from '../common/CustomRadarChart';
 import FingerprintModal from '../common/FingerprintModal';
 import LiveLocationMap from '../common/LiveLocationMap';
 import { useInfluxDB } from '../../services/influx/InfluxDBService';
@@ -33,13 +31,48 @@ import {
   Play,
   X,
 } from 'lucide-react-native';
-import { ENV_SENSOR_DEFINITIONS, GAS_SENSOR_DEFINITIONS } from '../../sensors';
+import { SENSOR_DEFINITIONS } from '../../sensors';
 
-type SensorValue = { label: string; value: number };
+type SensorValue = {
+  key: string;
+  label: string;
+  value: number | null;
+  unit: string;
+};
 
-const mockSensorValues: SensorValue[] = GAS_SENSOR_DEFINITIONS.map(sensor => ({
+function describeError(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  if (typeof error === 'string') {
+    return error;
+  }
+
+  if (error && typeof error === 'object') {
+    const details = error as Record<string, unknown>;
+    const message = details.message ?? details.localizedDescription;
+    const code = details.code;
+
+    if (message || code) {
+      return [code, message].filter(Boolean).join(': ');
+    }
+
+    try {
+      return JSON.stringify(error);
+    } catch {
+      return 'Unknown error';
+    }
+  }
+
+  return String(error);
+}
+
+const mockSensorValues: SensorValue[] = SENSOR_DEFINITIONS.map(sensor => ({
+  key: sensor.key,
   label: sensor.chartLabel,
   value: 0.5,
+  unit: sensor.unit,
 }));
 
 export default function SmellWalkScreen() {
@@ -57,7 +90,6 @@ export default function SmellWalkScreen() {
   const [isConnected, setIsConnected] = useState(__DEV__);
   const [showConnectionModal, setShowConnectionModal] = useState(false);
   const [showFingerprintModal, setShowFingerprintModal] = useState(false);
-  const [zoomLevel, setZoomLevel] = useState(0.1);
   const [didPromptResume, setDidPromptResume] = useState(false);
 
   useEffect(() => {
@@ -157,39 +189,13 @@ export default function SmellWalkScreen() {
       return mockSensorValues;
     }
 
-    return GAS_SENSOR_DEFINITIONS.map(sensor => ({
+    return SENSOR_DEFINITIONS.map(sensor => ({
+      key: sensor.key,
       label: sensor.chartLabel,
-      value: characteristicValues[sensor.key] ?? 0,
+      value: characteristicValues[sensor.key] ?? null,
+      unit: sensor.unit,
     }));
   }, [characteristicValues]);
-  const environmentalValues = useMemo(
-    () =>
-      ENV_SENSOR_DEFINITIONS.map(sensor => ({
-        key: sensor.key,
-        label: sensor.label,
-        value: characteristicValues[sensor.key],
-        unit: sensor.unit,
-      })),
-    [characteristicValues],
-  );
-
-  const radarData = useMemo(
-    () => [
-      {
-        key: 'live-data',
-        title: 'Live Reading',
-        values: sensorValues.map(sensor => ({
-          x: sensor.label,
-          y: sensor.value,
-        })),
-        color: {
-          fill: 'hsla(210, 100%, 50%, 0.35)',
-          stroke: 'hsla(210, 100%, 40%, 1)',
-        },
-      },
-    ],
-    [sensorValues],
-  );
 
   const handleStopWalk = async () => {
     try {
@@ -210,7 +216,8 @@ export default function SmellWalkScreen() {
         );
       }
     } catch (error) {
-      Alert.alert('Could not stop smell walk', String(error));
+      console.error('Could not stop smell walk:', error);
+      Alert.alert('Could not stop smell walk', describeError(error));
     }
   };
 
@@ -319,34 +326,27 @@ export default function SmellWalkScreen() {
           </Pressable>
         </View>
 
-        <View style={styles.plotCard}>
-          <CustomRadarChart
-            data={radarData}
-            size={300}
-            maxValue={1}
-            zoomLevel={zoomLevel}
-            gridLevels={5}
-          />
-          <Slider
-            style={styles.slider}
-            minimumValue={0.001}
-            maximumValue={1}
-            step={0.001}
-            value={zoomLevel}
-            onValueChange={setZoomLevel}
-          />
-        </View>
-        <View style={styles.envCard}>
-          <Text style={styles.sectionTitle}>Environmental</Text>
-          {environmentalValues.map(sensor => (
-            <View key={sensor.key} style={styles.envRow}>
-              <Text style={styles.envLabel}>{sensor.label}</Text>
-              <Text style={styles.envValue}>
-                {sensor.value == null ? '—' : sensor.value.toFixed(2)}{' '}
-                {sensor.unit}
-              </Text>
-            </View>
-          ))}
+        <View style={styles.sensorCard}>
+          <Text style={styles.sectionTitle}>Live sensors</Text>
+          <View style={styles.sensorGrid}>
+            {sensorValues.map(sensor => (
+              <View
+                key={sensor.key}
+                accessible
+                accessibilityLabel={`${sensor.label}: ${
+                  sensor.value == null ? 'not available' : sensor.value
+                } ${sensor.unit}`}
+                style={styles.sensorCell}>
+                <Text style={styles.sensorLabel} numberOfLines={1}>
+                  {sensor.label}
+                </Text>
+                <Text style={styles.sensorValue}>
+                  {sensor.value == null ? '—' : sensor.value.toFixed(2)}{' '}
+                  {sensor.unit}
+                </Text>
+              </View>
+            ))}
+          </View>
         </View>
 
         <View style={styles.actions}>
@@ -525,27 +525,16 @@ const styles = StyleSheet.create({
     color: '#111',
     marginTop: 22,
   },
-  plotCard: {
-    marginTop: 10,
-    alignItems: 'center',
-  },
-  envCard: {
+  sensorCard: {
     marginTop: 12,
-    gap: 8,
   },
-  envRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  envLabel: { fontSize: 13, color: '#555' },
-  envValue: { fontSize: 13, color: '#111', fontWeight: '600' },
-  slider: { width: '100%', height: 36 },
   sensorGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 },
   sensorCell: {
     width: '23%',
-    minWidth: 72,
+    minWidth: 70,
     backgroundColor: '#f1f3f5',
     borderRadius: 6,
+    paddingHorizontal: 4,
     paddingVertical: 7,
     alignItems: 'center',
   },
