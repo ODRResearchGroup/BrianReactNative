@@ -150,6 +150,7 @@ export const InfluxDBProvider = ({
 
   const walkReadingsRef = useRef<Record<string, number>>({});
   const walkDeviceIdRef = useRef('unknown');
+  const lastWalkFlushAtRef = useRef(0);
 
   const walkTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -166,6 +167,18 @@ export const InfluxDBProvider = ({
         if (permission !== PermissionsAndroid.RESULTS.GRANTED) {
           console.warn('Location permission denied; sensor data will omit GPS');
           return;
+        }
+
+        if (Platform.Version >= 29) {
+          const backgroundPermission = await PermissionsAndroid.request(
+            PermissionsAndroid.PERMISSIONS.ACCESS_BACKGROUND_LOCATION,
+          );
+
+          if (backgroundPermission !== PermissionsAndroid.RESULTS.GRANTED) {
+            console.warn(
+              'Background location permission denied; background GPS data will be unavailable',
+            );
+          }
         }
       } else {
         const authorization = await Geolocation.requestAuthorization('always');
@@ -442,6 +455,7 @@ export const InfluxDBProvider = ({
       walkIdRef.current = nextWalkId;
       walkReadingsRef.current = {};
       walkDeviceIdRef.current = 'unknown';
+      lastWalkFlushAtRef.current = Date.now();
 
       const now = Date.now();
 
@@ -511,6 +525,7 @@ export const InfluxDBProvider = ({
       });
 
       walkIdRef.current = null;
+      lastWalkFlushAtRef.current = 0;
 
       setWalkId(null);
       setTrail([]);
@@ -595,6 +610,14 @@ export const InfluxDBProvider = ({
           }
         },
       );
+
+      const now = Date.now();
+      if (now - lastWalkFlushAtRef.current >= 5000) {
+        lastWalkFlushAtRef.current = now;
+        flushWalkData().catch(error => {
+          console.error('Error flushing background smell walk data:', error);
+        });
+      }
     };
 
     eventEmitter.on('ble_data_updated', handleBLEUpdate);
@@ -606,7 +629,7 @@ export const InfluxDBProvider = ({
 
       eventEmitter.off('sensor_reading', handleSensorReading);
     };
-  }, []);
+  }, [flushWalkData]);
 
   return (
     <InfluxDBContext.Provider
