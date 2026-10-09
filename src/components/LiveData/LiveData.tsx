@@ -22,11 +22,13 @@ import {
 } from '@react-navigation/native';
 import { useBLE } from '../../BLEUniversal';
 import Slider from '@react-native-community/slider';
-import CustomRadarChart from '../common/CustomRadarChart';
-import FingerprintModal from '../common/FingerprintModal';
-import TimedProgressBar from './components/TimeBar';
-import { SensorReadings } from '../../types/fingerprintTypes';
-import { SensorEvent } from '../../types/events';
+import CustomRadarChart from '../components/CustomRadarChart';
+import FingerprintModal from '../components/FingerprintModal';
+import {BatteryIndicator, BatteryLifetime} from './BatteryStatus';
+import TimedProgressBar from './TimeBar';
+import { SensorReadings } from './sharedTypes';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { SensorEvent, emitter } from '../types';
 import { Alert } from 'react-native';
 import Svg, { Path, Line, Rect } from 'react-native-svg';
 import { useInfluxDB } from '../../services/influx/InfluxDBService';
@@ -59,9 +61,11 @@ export default function LiveData() {
   const navigation = useNavigation<NavigationProp<{ Device: undefined }>>();
   const [isConnected, setIsConnected] = useState(__DEV__);
 
-  const methane = characteristicValues.Methane || 0;
-  const ammonia = characteristicValues.Ammonia || 0;
-  const formaldehyde = characteristicValues.Formaldehyde || 0;
+  const batteryPercentage = characteristicValues['Battery Percentage'];
+  const batteryRuntime = characteristicValues['Battery Runtime'];
+  const methane = characteristicValues['Methane'] || 0;
+  const ammonia = characteristicValues['Ammonia'] || 0;
+  const formaldehyde = characteristicValues['Formaldehyde'] || 0;
   const voc = characteristicValues['Voletile Organic Compounds'] || 0;
   const odour = characteristicValues.Odor || 0;
   const hydrogenSulfide = characteristicValues['Hydrogen Sulfide'] || 0;
@@ -381,6 +385,14 @@ export default function LiveData() {
         <View style={styles.liveDataSection}>
           <Text style={styles.title}>Live Data</Text>
 
+          <View style={styles.batterySummary}>
+            <View style={styles.batterySummaryHeader}>
+              <Text style={styles.batterySummaryLabel}>Battery</Text>
+              <BatteryIndicator percentage={batteryPercentage} />
+            </View>
+            <BatteryLifetime runtimeHours={batteryRuntime} />
+          </View>
+
           {/* Radar Chart */}
           <CustomRadarChart
             data={chartData}
@@ -515,6 +527,24 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     marginBottom: 20,
     color: '#000',
+  },
+  batterySummary: {
+    alignSelf: 'stretch',
+    backgroundColor: '#f5f5f5',
+    borderRadius: 10,
+    marginBottom: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  batterySummaryHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  batterySummaryLabel: {
+    color: '#333',
+    fontSize: 14,
+    fontWeight: '600',
   },
   slider: {
     width: '80%',

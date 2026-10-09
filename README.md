@@ -61,6 +61,12 @@ Configure these GitHub Actions secrets before the first release:
 The same keystore must be used for every release or Android will reject the APK
 as an update to an already-installed app.
 
+When installing a release over an existing app, `versionCode` in
+`android/app/build.gradle` must be higher than the installed version. Increase
+it for each release update. If installation reports
+`INSTALL_FAILED_VERSION_DOWNGRADE`, either increase the version code or
+uninstall the existing app first; uninstalling may remove its local data.
+
 On Windows, keep this project in a short, non-OneDrive path such as
 `C:/ODR/BrianReactNative`. React Native's New Architecture and Reanimated use
 CMake paths that exceed Windows' 260-character limit in the current location.
