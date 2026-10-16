@@ -78,7 +78,7 @@ def enableProguardInReleaseBuilds = false
  * this variant is about 6MiB larger per architecture than default.
  */
 def jscFlavor = 'io.github.react-native-community:jsc-android:2026004.+'
-def buildVersionCode = (project.properties["versionCode"] ?: "4").toString().toInteger()
+def buildVersionCode = (project.properties["versionCode"] ?: "6").toString().toInteger()
 def buildVersionName = (project.properties["versionName"] ?: "1.0").toString()
 
 android {
