@@ -23,8 +23,6 @@ import {
 import { useBLE } from '../../BLEUniversal';
 import Slider from '@react-native-community/slider';
 import {BatteryIndicator, BatteryLifetime} from './BatteryStatus';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { emitter } from '../types';
 import CustomRadarChart from '../common/CustomRadarChart';
 import FingerprintModal from '../common/FingerprintModal';
 import TimedProgressBar from './components/TimeBar';
@@ -64,9 +62,9 @@ export default function LiveData() {
 
   const batteryPercentage = characteristicValues['Battery Percentage'];
   const batteryRuntime = characteristicValues['Battery Runtime'];
-  const methane = characteristicValues['Methane'] || 0;
-  const ammonia = characteristicValues['Ammonia'] || 0;
-  const formaldehyde = characteristicValues['Formaldehyde'] || 0;
+  const methane = characteristicValues.Methane || 0;
+  const ammonia = characteristicValues.Ammonia || 0;
+  const formaldehyde = characteristicValues.Formaldehyde || 0;
   const voc = characteristicValues['Voletile Organic Compounds'] || 0;
   const odour = characteristicValues.Odor || 0;
   const hydrogenSulfide = characteristicValues['Hydrogen Sulfide'] || 0;

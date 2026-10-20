@@ -31,7 +31,7 @@ import {
   Play,
   X,
 } from 'lucide-react-native';
-import { ENV_SENSOR_DEFINITIONS, GAS_SENSOR_DEFINITIONS } from '../../sensors';
+import { ENV_SENSOR_DEFINITIONS } from '../../sensors';
 import { SENSOR_DEFINITIONS } from '../../sensors';
 
 type SensorValue = {
@@ -91,7 +91,6 @@ export default function SmellWalkScreen() {
   const [isConnected, setIsConnected] = useState(__DEV__);
   const [showConnectionModal, setShowConnectionModal] = useState(false);
   const [showFingerprintModal, setShowFingerprintModal] = useState(false);
-  const [zoomLevel, setZoomLevel] = useState(0.1);
   const [didPromptResume, setDidPromptResume] = useState(false);
 
   useEffect(() => {
