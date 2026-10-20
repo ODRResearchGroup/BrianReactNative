@@ -246,23 +246,15 @@ export const InfluxDBProvider = ({
       return;
     }
 
-    /*
-     * Clear the in-memory readings immediately so the same sample is not
-     * written twice if another flush is triggered later.
-     *
-     * If SQLite fails, the readings are restored below.
-     */
-    walkReadingsRef.current = {};
-
-    const currentLocation = latestLocationRef.current;
-    const recordedAt = Date.now();
-    const deviceId = walkDeviceIdRef.current || 'unknown';
-
     const valueFor = (sensorKey: string): number | null => {
       const value = readings[sensorKey];
 
       return typeof value === 'number' && Number.isFinite(value) ? value : null;
     };
+
+    const currentLocation = latestLocationRef.current;
+    const recordedAt = Date.now();
+    const deviceId = walkDeviceIdRef.current || 'unknown';
 
     try {
       /*
@@ -349,28 +341,12 @@ export const InfluxDBProvider = ({
           );
         }
       } catch (influxError) {
-        /*
-         * Do not restore the readings here.
-         *
-         * The sample is already safely stored in SQLite. Restoring it would
-         * cause the same local sample to be inserted again on the next
-         * flush.
-         */
         console.error(
           `Failed to upload smell walk sample ${currentWalkId} to InfluxDB:`,
           influxError,
         );
       }
     } catch (error) {
-      /*
-       * SQLite failed, so restore the readings so the next flush can try
-       * again instead of silently losing sensor data.
-       */
-      walkReadingsRef.current = {
-        ...readings,
-        ...walkReadingsRef.current,
-      };
-
       console.error('Error storing smell walk data locally:', error);
 
       throw error;
