@@ -12,6 +12,7 @@ import KeepAwake from 'react-native-keep-awake';
 import { BatteryIndicator, BatteryLifetime } from '../common/BatteryStatus';
 import { useBLE } from '../../BLEUniversal';
 import {
+  BATTERY_CHARACTERISTIC_DEFINITIONS,
   BOARD_STATUS_DEFINITIONS,
   SENSOR_DEFINITIONS,
   isBoardStatusBitSet,
@@ -51,16 +52,23 @@ const BLELoggerApp = () => {
           );
         }
       }
-      const notificationSpecs = SENSOR_DEFINITIONS.filter(sensor =>
-        discoveredPairs.has(
-          `${sensor.serviceUUID.toLowerCase()}:${sensor.characteristicUUID.toLowerCase()}`,
+      const notificationSpecs = [
+        ...SENSOR_DEFINITIONS.filter(sensor =>
+          discoveredPairs.has(
+            `${sensor.serviceUUID.toLowerCase()}:${sensor.characteristicUUID.toLowerCase()}`,
+          ),
+        ).map(sensor => ({
+          serviceUUID: sensor.serviceUUID,
+          characteristicUUID: sensor.characteristicUUID,
+          label: sensor.label,
+          sensorKey: sensor.key,
+        })),
+        ...BATTERY_CHARACTERISTIC_DEFINITIONS.filter(characteristic =>
+          discoveredPairs.has(
+            `${characteristic.serviceUUID.toLowerCase()}:${characteristic.characteristicUUID.toLowerCase()}`,
+          ),
         ),
-      ).map(sensor => ({
-        serviceUUID: sensor.serviceUUID,
-        characteristicUUID: sensor.characteristicUUID,
-        label: sensor.label,
-        sensorKey: sensor.key,
-      }));
+      ];
       await enableNotifications(connectedDeviceInstance, notificationSpecs);
       await readBoardStatus(connectedDeviceInstance);
       setSelectedDeviceId(null);

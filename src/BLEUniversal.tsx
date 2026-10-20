@@ -30,6 +30,7 @@ type BLEContextType = {
       label: string;
       format?: 'float32' | 'uint8';
       sensorKey: string;
+      emitEvent?: boolean;
     }[],
   ) => Promise<void>;
   readBoardStatus: (device: Device) => Promise<number | null>;
@@ -149,6 +150,7 @@ export const BLEProvider = ({ children }: { children: React.ReactNode }) => {
       label: string;
       format?: 'float32' | 'uint8';
       sensorKey: string;
+      emitEvent?: boolean;
     }[],
   ) => {
     for (const {
@@ -157,6 +159,7 @@ export const BLEProvider = ({ children }: { children: React.ReactNode }) => {
       label,
       format = 'float32',
       sensorKey,
+      emitEvent = true,
     } of characteristics) {
       console.log(
         'Enabling notification for',
@@ -240,19 +243,20 @@ export const BLEProvider = ({ children }: { children: React.ReactNode }) => {
               [sensorKey]: decodedValue,
             }));
 
-            // Emit BLE data updated event for InfluxDB integration
-            const bleEvent: BLEDataUpdated = {
-              type: 'ble_data_updated',
-              timestamp: new Date(),
-              deviceId: device.id,
-              serviceUUID,
-              characteristicUUID,
-              rawValue,
-              decodedValue,
-              source: device.name || 'Unknown Device',
-            };
+            if (emitEvent) {
+              const bleEvent: BLEDataUpdated = {
+                type: 'ble_data_updated',
+                timestamp: new Date(),
+                deviceId: device.id,
+                serviceUUID,
+                characteristicUUID,
+                rawValue,
+                decodedValue,
+                source: device.name || 'Unknown Device',
+              };
 
-            eventEmitter.emit('ble_data_updated', bleEvent);
+              eventEmitter.emit('ble_data_updated', bleEvent);
+            }
 
             console.log(`${label}: ${decodedValue}`);
             console.log(`${sensorKey}: ${decodedValue}`);
