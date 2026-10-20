@@ -9,14 +9,20 @@ import {
   ScrollView,
 } from 'react-native';
 import KeepAwake from 'react-native-keep-awake';
-import { useBLE } from '../BLEUniversal';
 import {BatteryIndicator, BatteryLifetime} from '../components/BatteryStatus';
+import { useBLE } from '../../BLEUniversal';
+import {
+  BOARD_STATUS_DEFINITIONS,
+  SENSOR_DEFINITIONS,
+  isBoardStatusBitSet,
+} from '../../sensors';
 
 const BLELoggerApp = () => {
   const {
     devices,
     connectedDevice,
     characteristicValues,
+    boardStatus,
     scanForDevices,
     connectToDevice,
     enableNotifications,

@@ -9,10 +9,8 @@ import {
   Text,
   View,
 } from 'react-native';
-import Slider from '@react-native-community/slider';
 import KeepAwake from 'react-native-keep-awake';
 import { useBLE } from '../../BLEUniversal';
-import CustomRadarChart from '../common/CustomRadarChart';
 import FingerprintModal from '../common/FingerprintModal';
 import LiveLocationMap from '../common/LiveLocationMap';
 import { useInfluxDB } from '../../services/influx/InfluxDBService';
@@ -34,12 +32,48 @@ import {
   X,
 } from 'lucide-react-native';
 import { ENV_SENSOR_DEFINITIONS, GAS_SENSOR_DEFINITIONS } from '../../sensors';
+import { SENSOR_DEFINITIONS } from '../../sensors';
 
-type SensorValue = { label: string; value: number };
+type SensorValue = {
+  key: string;
+  label: string;
+  value: number | null;
+  unit: string;
+};
 
-const mockSensorValues: SensorValue[] = GAS_SENSOR_DEFINITIONS.map(sensor => ({
+function describeError(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  if (typeof error === 'string') {
+    return error;
+  }
+
+  if (error && typeof error === 'object') {
+    const details = error as Record<string, unknown>;
+    const message = details.message ?? details.localizedDescription;
+    const code = details.code;
+
+    if (message || code) {
+      return [code, message].filter(Boolean).join(': ');
+    }
+
+    try {
+      return JSON.stringify(error);
+    } catch {
+      return 'Unknown error';
+    }
+  }
+
+  return String(error);
+}
+
+const mockSensorValues: SensorValue[] = SENSOR_DEFINITIONS.map(sensor => ({
+  key: sensor.key,
   label: sensor.chartLabel,
   value: 0.5,
+  unit: sensor.unit,
 }));
 
 export default function SmellWalkScreen() {
@@ -157,9 +191,11 @@ export default function SmellWalkScreen() {
       return mockSensorValues;
     }
 
-    return GAS_SENSOR_DEFINITIONS.map(sensor => ({
+    return SENSOR_DEFINITIONS.map(sensor => ({
+      key: sensor.key,
       label: sensor.chartLabel,
-      value: characteristicValues[sensor.key] ?? 0,
+      value: characteristicValues[sensor.key] ?? null,
+      unit: sensor.unit,
     }));
   }, [characteristicValues]);
   const environmentalValues = useMemo(
@@ -173,33 +209,27 @@ export default function SmellWalkScreen() {
     [characteristicValues],
   );
 
-  const radarData = useMemo(
-    () => [
-      {
-        key: 'live-data',
-        title: 'Live Reading',
-        values: sensorValues.map(sensor => ({
-          x: sensor.label,
-          y: sensor.value,
-        })),
-        color: {
-          fill: 'hsla(210, 100%, 50%, 0.35)',
-          stroke: 'hsla(210, 100%, 40%, 1)',
-        },
-      },
-    ],
-    [sensorValues],
-  );
-
   const handleStopWalk = async () => {
     try {
       const completedWalkId = await stopSmellWalk();
-      if (completedWalkId) {
+
+      if (!completedWalkId) {
+        return;
+      }
+
+      try {
         const savedPath = await exportSmellWalkZip(completedWalkId);
         Alert.alert('Smell walk saved', `Walk export saved to:\n${savedPath}`);
+      } catch (exportError) {
+        console.error('Smell walk export failed:', exportError);
+        Alert.alert(
+          'Walk stopped',
+          'The smell walk was saved, but the export could not be shared.',
+        );
       }
     } catch (error) {
-      Alert.alert('Could not save smell walk', String(error));
+      console.error('Could not stop smell walk:', error);
+      Alert.alert('Could not stop smell walk', describeError(error));
     }
   };
 
@@ -219,8 +249,14 @@ export default function SmellWalkScreen() {
   };
 
   const handleStartWalk = async () => {
-    if (await requireConnectedDevice()) {
-      startSmellWalk();
+    if (!(await requireConnectedDevice())) {
+      return;
+    }
+
+    try {
+      await startSmellWalk();
+    } catch (error) {
+      Alert.alert('Could not start smell walk', String(error));
     }
   };
 
@@ -302,22 +338,27 @@ export default function SmellWalkScreen() {
           </Pressable>
         </View>
 
-        <View style={styles.plotCard}>
-          <CustomRadarChart
-            data={radarData}
-            size={300}
-            maxValue={1}
-            zoomLevel={zoomLevel}
-            gridLevels={5}
-          />
-          <Slider
-            style={styles.slider}
-            minimumValue={0.001}
-            maximumValue={1}
-            step={0.001}
-            value={zoomLevel}
-            onValueChange={setZoomLevel}
-          />
+        <View style={styles.sensorCard}>
+          <Text style={styles.sectionTitle}>Live sensors</Text>
+          <View style={styles.sensorGrid}>
+            {sensorValues.map(sensor => (
+              <View
+                key={sensor.key}
+                accessible
+                accessibilityLabel={`${sensor.label}: ${
+                  sensor.value == null ? 'not available' : sensor.value
+                } ${sensor.unit}`}
+                style={styles.sensorCell}>
+                <Text style={styles.sensorLabel} numberOfLines={1}>
+                  {sensor.label}
+                </Text>
+                <Text style={styles.sensorValue}>
+                  {sensor.value == null ? '—' : sensor.value.toFixed(2)}{' '}
+                  {sensor.unit}
+                </Text>
+              </View>
+            ))}
+          </View>
         </View>
         <View style={styles.envCard}>
           <Text style={styles.sectionTitle}>Environmental</Text>
@@ -508,9 +549,8 @@ const styles = StyleSheet.create({
     color: '#111',
     marginTop: 22,
   },
-  plotCard: {
-    marginTop: 10,
-    alignItems: 'center',
+  sensorCard: {
+    marginTop: 12,
   },
   envCard: {
     marginTop: 12,
@@ -526,9 +566,10 @@ const styles = StyleSheet.create({
   sensorGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 },
   sensorCell: {
     width: '23%',
-    minWidth: 72,
+    minWidth: 70,
     backgroundColor: '#f1f3f5',
     borderRadius: 6,
+    paddingHorizontal: 4,
     paddingVertical: 7,
     alignItems: 'center',
   },

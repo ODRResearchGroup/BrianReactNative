@@ -29,6 +29,7 @@ type BLEContextType = {
       characteristicUUID: string;
       label: string;
       format?: 'float32' | 'uint8';
+      sensorKey: string;
     }[],
   ) => Promise<void>;
   readBoardStatus: (device: Device) => Promise<number | null>;
@@ -56,25 +57,31 @@ export const BLEProvider = ({ children }: { children: React.ReactNode }) => {
 
   // Request Android permissions
   const requestPermissions = async () => {
-    if (Platform.OS === 'android') {
-      const permissions = [
-        PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
+    if (Platform.OS !== 'android') {
+      return;
+    }
+
+    const permissions: string[] = [
+      PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
+    ];
+
+    if (Platform.Version >= 31) {
+      permissions.push(
         PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN,
-      ];
+        PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT,
+      );
+    }
 
-      if (Platform.Version >= 31) {
-        permissions.push(PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT);
-      }
+    const granted = await PermissionsAndroid.requestMultiple(
+      permissions as any[],
+    );
 
-      const granted = await PermissionsAndroid.requestMultiple(permissions);
+    const denied = Object.values(granted).some(
+      result => result !== PermissionsAndroid.RESULTS.GRANTED,
+    );
 
-      if (
-        Object.values(granted).some(
-          result => result !== PermissionsAndroid.RESULTS.GRANTED,
-        )
-      ) {
-        console.warn('Required BLE permissions not granted');
-      }
+    if (denied) {
+      console.warn('Required BLE permissions not granted');
     }
   };
 
@@ -141,6 +148,7 @@ export const BLEProvider = ({ children }: { children: React.ReactNode }) => {
       characteristicUUID: string;
       label: string;
       format?: 'float32' | 'uint8';
+      sensorKey: string;
     }[],
   ) => {
     for (const {
@@ -148,6 +156,7 @@ export const BLEProvider = ({ children }: { children: React.ReactNode }) => {
       characteristicUUID,
       label,
       format = 'float32',
+      sensorKey,
     } of characteristics) {
       console.log(
         'Enabling notification for',
@@ -226,6 +235,7 @@ export const BLEProvider = ({ children }: { children: React.ReactNode }) => {
             setCharacteristicValues(prev => ({
               ...prev,
               [label]: decodedValue,
+              [sensorKey]: voltageValue,
             }));
 
             // Emit BLE data updated event for InfluxDB integration
@@ -243,6 +253,7 @@ export const BLEProvider = ({ children }: { children: React.ReactNode }) => {
             eventEmitter.emit('ble_data_updated', bleEvent);
 
             console.log(`${label}: ${decodedValue}`);
+            console.log(`${sensorKey}: ${voltageValue}`);
           },
         );
       } catch (error) {
