@@ -631,4 +631,3 @@ export const useInfluxDB = () => {
 
   return context;
 };
-

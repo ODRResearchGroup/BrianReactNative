@@ -66,6 +66,7 @@ When installing a release over an existing app, `versionCode` in
 it for each release update. If installation reports
 `INSTALL_FAILED_VERSION_DOWNGRADE`, either increase the version code or
 uninstall the existing app first; uninstalling may remove its local data.
+
 ### Pull request checks
 
 `.github/workflows/quality.yml` runs lint, typecheck, format, Jest and an

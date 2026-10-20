@@ -9,7 +9,7 @@ import {
   ScrollView,
 } from 'react-native';
 import KeepAwake from 'react-native-keep-awake';
-import {BatteryIndicator, BatteryLifetime} from '../components/BatteryStatus';
+import { BatteryIndicator, BatteryLifetime } from '../components/BatteryStatus';
 import { useBLE } from '../../BLEUniversal';
 import {
   BOARD_STATUS_DEFINITIONS,
@@ -99,7 +99,7 @@ const BLELoggerApp = () => {
                 </Text>
               </View>
             ) : (
-              devices.map((device) => {
+              devices.map(device => {
                 const isConnected = connectedDevice?.id === device.id;
                 const isSelected = selectedDeviceId === device.id;
                 const batteryPercentage = isConnected
@@ -112,13 +112,14 @@ const BLELoggerApp = () => {
                 return (
                   <Pressable
                     key={device.id}
-                    onPress={() => !isConnected && setSelectedDeviceId(device.id)}
+                    onPress={() =>
+                      !isConnected && setSelectedDeviceId(device.id)
+                    }
                     style={[
                       styles.deviceItem,
                       isSelected && styles.deviceItemSelected,
                     ]}
-                    disabled={isConnected}
-                  >
+                    disabled={isConnected}>
                     <View style={styles.deviceInfo}>
                       <Text style={styles.deviceName}>
                         {device.name || 'Unnamed Device'}
@@ -127,8 +128,7 @@ const BLELoggerApp = () => {
                         style={[
                           styles.deviceStatus,
                           isConnected && styles.deviceStatusConnected,
-                        ]}
-                      >
+                        ]}>
                         {isConnected ? 'Connected' : 'Not connected'}
                       </Text>
                       {isConnected && (

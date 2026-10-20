@@ -1,5 +1,5 @@
 import React from 'react';
-import {StyleSheet, Text, View} from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import {
   Battery,
   BatteryFull,
@@ -16,7 +16,7 @@ type BatteryLifetimeProps = {
   runtimeHours?: number;
 };
 
-export function BatteryIndicator({percentage}: BatteryIndicatorProps) {
+export function BatteryIndicator({ percentage }: BatteryIndicatorProps) {
   const hasPercentage =
     typeof percentage === 'number' && Number.isFinite(percentage);
   const boundedPercentage = hasPercentage
@@ -26,26 +26,26 @@ export function BatteryIndicator({percentage}: BatteryIndicatorProps) {
     boundedPercentage === undefined
       ? '#999'
       : boundedPercentage < 10
-        ? '#e53935'
-        : boundedPercentage < 30
-          ? '#f57c00'
-          : boundedPercentage < 70
-            ? '#f9a825'
-            : '#34a853';
+      ? '#e53935'
+      : boundedPercentage < 30
+      ? '#f57c00'
+      : boundedPercentage < 70
+      ? '#f9a825'
+      : '#34a853';
   const Icon =
     boundedPercentage === undefined
       ? Battery
       : boundedPercentage < 10
-        ? BatteryWarning
-        : boundedPercentage < 30
-          ? BatteryLow
-          : boundedPercentage < 70
-            ? BatteryMedium
-            : BatteryFull;
+      ? BatteryWarning
+      : boundedPercentage < 30
+      ? BatteryLow
+      : boundedPercentage < 70
+      ? BatteryMedium
+      : BatteryFull;
 
   return (
     <View style={styles.indicator}>
-      <Text style={[styles.percentage, {color}]}>
+      <Text style={[styles.percentage, { color }]}>
         {boundedPercentage === undefined
           ? '--'
           : `${Math.round(boundedPercentage)}%`}
@@ -55,7 +55,7 @@ export function BatteryIndicator({percentage}: BatteryIndicatorProps) {
   );
 }
 
-export function BatteryLifetime({runtimeHours}: BatteryLifetimeProps) {
+export function BatteryLifetime({ runtimeHours }: BatteryLifetimeProps) {
   const hasRuntime =
     typeof runtimeHours === 'number' &&
     Number.isFinite(runtimeHours) &&

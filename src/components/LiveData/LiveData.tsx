@@ -22,7 +22,7 @@ import {
 } from '@react-navigation/native';
 import { useBLE } from '../../BLEUniversal';
 import Slider from '@react-native-community/slider';
-import {BatteryIndicator, BatteryLifetime} from './BatteryStatus';
+import { BatteryIndicator, BatteryLifetime } from './BatteryStatus';
 import CustomRadarChart from '../common/CustomRadarChart';
 import FingerprintModal from '../common/FingerprintModal';
 import TimedProgressBar from './components/TimeBar';

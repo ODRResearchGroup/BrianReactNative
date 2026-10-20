@@ -199,7 +199,9 @@ export const BLEProvider = ({ children }: { children: React.ReactNode }) => {
                     buf.byteLength,
                   );
                 } else {
-                  throw new Error('No base64 decoder available in this environment');
+                  throw new Error(
+                    'No base64 decoder available in this environment',
+                  );
                 }
 
                 const expectedLength = valueFormat === 'uint8' ? 1 : 4;
