@@ -155,6 +155,15 @@ export const InfluxDBProvider = ({
   const walkTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
+    interruptActiveWalks(Date.now()).catch(error => {
+      console.warn(
+        'Failed to mark previously active walks as interrupted:',
+        error,
+      );
+    });
+  }, []);
+
+  useEffect(() => {
     let watchId: number | null = null;
     let active = true;
 
@@ -246,12 +255,6 @@ export const InfluxDBProvider = ({
       return;
     }
 
-    /*
-     * Clear the in-memory readings immediately so the same sample is not
-     * written twice if another flush is triggered later.
-     *
-     * If SQLite fails, the readings are restored below.
-     */
     walkReadingsRef.current = {};
 
     const currentLocation = latestLocationRef.current;
@@ -265,13 +268,6 @@ export const InfluxDBProvider = ({
     };
 
     try {
-      /*
-       * SQLite remains the local source of truth.
-       *
-       * InfluxDB is an additional remote destination. This means that a
-       * temporary network failure does not cause the local sensor sample
-       * to disappear.
-       */
       await insertSensorRecord({
         id: `${currentWalkId}-${recordedAt}`,
         title: currentWalkId,
@@ -311,13 +307,6 @@ export const InfluxDBProvider = ({
         deltaEtoh: null,
         deltaNo2: null,
 
-        /*
-         * These are required by the current SensorRecord type.
-         *
-         * SQLite is still responsible for its normal syncStatus/syncedAt
-         * fields. These three fields describe the Influx side of the
-         * record.
-         */
         influxStatus: 'pending',
         influxSyncedAt: null,
         influxLastError: null,
@@ -325,9 +314,6 @@ export const InfluxDBProvider = ({
 
       console.log(`Stored smell walk sample ${currentWalkId}`);
 
-      /*
-       * Send the same sample to InfluxDB after local persistence succeeds.
-       */
       try {
         const point = buildInfluxPoint(
           currentWalkId,
@@ -349,23 +335,12 @@ export const InfluxDBProvider = ({
           );
         }
       } catch (influxError) {
-        /*
-         * Do not restore the readings here.
-         *
-         * The sample is already safely stored in SQLite. Restoring it would
-         * cause the same local sample to be inserted again on the next
-         * flush.
-         */
         console.error(
           `Failed to upload smell walk sample ${currentWalkId} to InfluxDB:`,
           influxError,
         );
       }
     } catch (error) {
-      /*
-       * SQLite failed, so restore the readings so the next flush can try
-       * again instead of silently losing sensor data.
-       */
       walkReadingsRef.current = {
         ...readings,
         ...walkReadingsRef.current,

@@ -9,6 +9,7 @@ import {
   ScrollView,
 } from 'react-native';
 import KeepAwake from 'react-native-keep-awake';
+import { BatteryIndicator, BatteryLifetime } from '../common/BatteryStatus';
 import { useBLE } from '../../BLEUniversal';
 import {
   BOARD_STATUS_DEFINITIONS,
@@ -20,6 +21,7 @@ const BLELoggerApp = () => {
   const {
     devices,
     connectedDevice,
+    characteristicValues,
     boardStatus,
     scanForDevices,
     connectToDevice,
@@ -56,6 +58,7 @@ const BLELoggerApp = () => {
       ).map(sensor => ({
         serviceUUID: sensor.serviceUUID,
         characteristicUUID: sensor.characteristicUUID,
+        label: sensor.label,
         sensorKey: sensor.key,
       }));
       await enableNotifications(connectedDeviceInstance, notificationSpecs);
@@ -97,23 +100,28 @@ const BLELoggerApp = () => {
                 </Text>
               </View>
             ) : (
-              devices
-                .filter(device => device.name?.startsWith('Brian'))
-                .map(device => {
-                  const isConnected = connectedDevice?.id === device.id;
-                  const isSelected = selectedDeviceId === device.id;
+              devices.map(device => {
+                const isConnected = connectedDevice?.id === device.id;
+                const isSelected = selectedDeviceId === device.id;
+                const batteryPercentage = isConnected
+                  ? characteristicValues['Battery Percentage']
+                  : undefined;
+                const batteryRuntime = isConnected
+                  ? characteristicValues['Battery Runtime']
+                  : undefined;
 
-                  return (
-                    <Pressable
-                      key={device.id}
-                      onPress={() =>
-                        !isConnected && setSelectedDeviceId(device.id)
-                      }
-                      style={[
-                        styles.deviceItem,
-                        isSelected && styles.deviceItemSelected,
-                      ]}
-                      disabled={isConnected}>
+                return (
+                  <Pressable
+                    key={device.id}
+                    onPress={() =>
+                      !isConnected && setSelectedDeviceId(device.id)
+                    }
+                    style={[
+                      styles.deviceItem,
+                      isSelected && styles.deviceItemSelected,
+                    ]}
+                    disabled={isConnected}>
+                    <View style={styles.deviceInfo}>
                       <Text style={styles.deviceName}>
                         {device.name || 'Unnamed Device'}
                       </Text>
@@ -124,9 +132,16 @@ const BLELoggerApp = () => {
                         ]}>
                         {isConnected ? 'Connected' : 'Not connected'}
                       </Text>
-                    </Pressable>
-                  );
-                })
+                      {isConnected && (
+                        <BatteryLifetime runtimeHours={batteryRuntime} />
+                      )}
+                    </View>
+                    {isConnected && (
+                      <BatteryIndicator percentage={batteryPercentage} />
+                    )}
+                  </Pressable>
+                );
+              })
             )}
           </View>
         </View>
@@ -238,6 +253,10 @@ const styles = StyleSheet.create({
     backgroundColor: 'white',
     borderBottomWidth: 1,
     borderBottomColor: '#f0f0f0',
+  },
+  deviceInfo: {
+    flex: 1,
+    marginRight: 12,
   },
   deviceItemSelected: {
     backgroundColor: '#f0f8ff',
