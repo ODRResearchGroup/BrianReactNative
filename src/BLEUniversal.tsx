@@ -237,7 +237,7 @@ export const BLEProvider = ({ children }: { children: React.ReactNode }) => {
             setCharacteristicValues(prev => ({
               ...prev,
               [label]: decodedValue,
-              [sensorKey]: voltageValue,
+              [sensorKey]: decodedValue,
             }));
 
             // Emit BLE data updated event for InfluxDB integration
@@ -255,7 +255,7 @@ export const BLEProvider = ({ children }: { children: React.ReactNode }) => {
             eventEmitter.emit('ble_data_updated', bleEvent);
 
             console.log(`${label}: ${decodedValue}`);
-            console.log(`${sensorKey}: ${voltageValue}`);
+            console.log(`${sensorKey}: ${decodedValue}`);
           },
         );
       } catch (error) {

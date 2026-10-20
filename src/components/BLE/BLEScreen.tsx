@@ -9,7 +9,7 @@ import {
   ScrollView,
 } from 'react-native';
 import KeepAwake from 'react-native-keep-awake';
-import { BatteryIndicator, BatteryLifetime } from '../components/BatteryStatus';
+import { BatteryIndicator, BatteryLifetime } from '../common/BatteryStatus';
 import { useBLE } from '../../BLEUniversal';
 import {
   BOARD_STATUS_DEFINITIONS,
@@ -58,6 +58,7 @@ const BLELoggerApp = () => {
       ).map(sensor => ({
         serviceUUID: sensor.serviceUUID,
         characteristicUUID: sensor.characteristicUUID,
+        label: sensor.label,
         sensorKey: sensor.key,
       }));
       await enableNotifications(connectedDeviceInstance, notificationSpecs);
