@@ -31,7 +31,6 @@ import {
   Play,
   X,
 } from 'lucide-react-native';
-import { ENV_SENSOR_DEFINITIONS } from '../../sensors';
 import { SENSOR_DEFINITIONS } from '../../sensors';
 
 type SensorValue = {
@@ -197,16 +196,6 @@ export default function SmellWalkScreen() {
       unit: sensor.unit,
     }));
   }, [characteristicValues]);
-  const environmentalValues = useMemo(
-    () =>
-      ENV_SENSOR_DEFINITIONS.map(sensor => ({
-        key: sensor.key,
-        label: sensor.label,
-        value: characteristicValues[sensor.key],
-        unit: sensor.unit,
-      })),
-    [characteristicValues],
-  );
 
   const handleStopWalk = async () => {
     try {
@@ -358,18 +347,6 @@ export default function SmellWalkScreen() {
               </View>
             ))}
           </View>
-        </View>
-        <View style={styles.envCard}>
-          <Text style={styles.sectionTitle}>Environmental</Text>
-          {environmentalValues.map(sensor => (
-            <View key={sensor.key} style={styles.envRow}>
-              <Text style={styles.envLabel}>{sensor.label}</Text>
-              <Text style={styles.envValue}>
-                {sensor.value == null ? '—' : sensor.value.toFixed(2)}{' '}
-                {sensor.unit}
-              </Text>
-            </View>
-          ))}
         </View>
 
         <View style={styles.actions}>
