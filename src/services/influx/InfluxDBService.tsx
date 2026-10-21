@@ -255,17 +255,15 @@ export const InfluxDBProvider = ({
       return;
     }
 
-    walkReadingsRef.current = {};
-
-    const currentLocation = latestLocationRef.current;
-    const recordedAt = Date.now();
-    const deviceId = walkDeviceIdRef.current || 'unknown';
-
     const valueFor = (sensorKey: string): number | null => {
       const value = readings[sensorKey];
 
       return typeof value === 'number' && Number.isFinite(value) ? value : null;
     };
+
+    const currentLocation = latestLocationRef.current;
+    const recordedAt = Date.now();
+    const deviceId = walkDeviceIdRef.current || 'unknown';
 
     try {
       await insertSensorRecord({
@@ -341,11 +339,6 @@ export const InfluxDBProvider = ({
         );
       }
     } catch (error) {
-      walkReadingsRef.current = {
-        ...readings,
-        ...walkReadingsRef.current,
-      };
-
       console.error('Error storing smell walk data locally:', error);
 
       throw error;

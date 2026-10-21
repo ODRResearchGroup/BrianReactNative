@@ -15,6 +15,8 @@ import {
   BATTERY_CHARACTERISTIC_DEFINITIONS,
   BOARD_STATUS_DEFINITIONS,
   SENSOR_DEFINITIONS,
+  SENSOR_DATA_JSON_CHARACTERISTIC_UUID,
+  CUSTOM_SERVICE_UUID,
   isBoardStatusBitSet,
 } from '../../sensors';
 
@@ -52,17 +54,27 @@ const BLELoggerApp = () => {
           );
         }
       }
+      const jsonPair = `${CUSTOM_SERVICE_UUID.toLowerCase()}:${SENSOR_DATA_JSON_CHARACTERISTIC_UUID}`;
       const notificationSpecs = [
-        ...SENSOR_DEFINITIONS.filter(sensor =>
-          discoveredPairs.has(
-            `${sensor.serviceUUID.toLowerCase()}:${sensor.characteristicUUID.toLowerCase()}`,
-          ),
-        ).map(sensor => ({
-          serviceUUID: sensor.serviceUUID,
-          characteristicUUID: sensor.characteristicUUID,
-          label: sensor.label,
-          sensorKey: sensor.key,
-        })),
+        ...(discoveredPairs.has(jsonPair)
+          ? [
+              {
+                serviceUUID: CUSTOM_SERVICE_UUID,
+                characteristicUUID: SENSOR_DATA_JSON_CHARACTERISTIC_UUID,
+                label: 'Sensor data (JSON)',
+                sensorKey: 'sensor-data-json',
+              },
+            ]
+          : SENSOR_DEFINITIONS.filter(sensor =>
+              discoveredPairs.has(
+                `${sensor.serviceUUID.toLowerCase()}:${sensor.characteristicUUID.toLowerCase()}`,
+              ),
+            ).map(sensor => ({
+              serviceUUID: sensor.serviceUUID,
+              characteristicUUID: sensor.characteristicUUID,
+              label: sensor.label,
+              sensorKey: sensor.key,
+            }))),
         ...BATTERY_CHARACTERISTIC_DEFINITIONS.filter(characteristic =>
           discoveredPairs.has(
             `${characteristic.serviceUUID.toLowerCase()}:${characteristic.characteristicUUID.toLowerCase()}`,
