@@ -37,6 +37,12 @@ jest.mock('../src/services/influx/InfluxDBService', () => ({
   }),
 }));
 
+jest.mock('../src/services/location/locationPermissions', () => ({
+  ensureFullLocationAccess: jest.fn().mockResolvedValue({ granted: true }),
+  locationAccessMessage: jest.fn(),
+  openLocationSettings: jest.fn().mockResolvedValue(undefined),
+}));
+
 jest.mock('../src/services/database/db', () => ({
   finalizeInterruptedWalk: jest.fn().mockResolvedValue(undefined),
   listInterruptedWalks: jest.fn().mockResolvedValue([]),
@@ -50,6 +56,7 @@ jest.mock('../src/components/common/FingerprintModal', () => () => null);
 
 jest.mock('../src/services/sync/exportService', () => ({
   exportSmellWalkCsv: jest.fn(),
+  exportSmellWalkZip: jest.fn(),
 }));
 
 import SmellWalkScreen from '../src/components/SmellWalk/SmellWalkScreen';

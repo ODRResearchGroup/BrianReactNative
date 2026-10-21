@@ -32,6 +32,11 @@ import {
   X,
 } from 'lucide-react-native';
 import { SENSOR_DEFINITIONS } from '../../sensors';
+import {
+  ensureFullLocationAccess,
+  locationAccessMessage,
+  openLocationSettings,
+} from '../../services/location/locationPermissions';
 
 type SensorValue = {
   key: string;
@@ -92,6 +97,37 @@ export default function SmellWalkScreen() {
   const [showFingerprintModal, setShowFingerprintModal] = useState(false);
   const [didPromptResume, setDidPromptResume] = useState(false);
 
+  const handleResumeWalk = useCallback(
+    async (interruptedWalkId: string) => {
+      const locationAccess = await ensureFullLocationAccess();
+      if (!locationAccess.granted) {
+        Alert.alert(
+          'Full GPS access required',
+          locationAccessMessage(locationAccess),
+          [
+            { text: 'End walk', style: 'cancel' },
+            {
+              text: 'Open Settings',
+              onPress: () => {
+                openLocationSettings().catch(error =>
+                  console.error('Could not open location settings:', error),
+                );
+              },
+            },
+          ],
+        );
+        return;
+      }
+
+      setDidPromptResume(true);
+      startSmellWalk(interruptedWalkId).catch(error => {
+        console.error('Could not resume smell walk:', error);
+        Alert.alert('Could not resume smell walk', String(error));
+      });
+    },
+    [startSmellWalk],
+  );
+
   useEffect(() => {
     if (!isSmellWalkActive) {
       return;
@@ -148,15 +184,14 @@ export default function SmellWalkScreen() {
             {
               text: 'Resume',
               onPress: () => {
-                setDidPromptResume(true);
-                startSmellWalk(rows[0].id);
+                handleResumeWalk(rows[0].id);
               },
             },
           ],
         );
       })
       .catch(() => setDidPromptResume(true));
-  }, [didPromptResume, isSmellWalkActive, startSmellWalk]);
+  }, [didPromptResume, handleResumeWalk, isSmellWalkActive]);
 
   useFocusEffect(
     useCallback(() => {
@@ -238,6 +273,26 @@ export default function SmellWalkScreen() {
 
   const handleStartWalk = async () => {
     if (!(await requireConnectedDevice())) {
+      return;
+    }
+
+    const locationAccess = await ensureFullLocationAccess();
+    if (!locationAccess.granted) {
+      Alert.alert(
+        'Full GPS access required',
+        locationAccessMessage(locationAccess),
+        [
+          { text: 'Not now', style: 'cancel' },
+          {
+            text: 'Open Settings',
+            onPress: () => {
+              openLocationSettings().catch(error =>
+                console.error('Could not open location settings:', error),
+              );
+            },
+          },
+        ],
+      );
       return;
     }
 

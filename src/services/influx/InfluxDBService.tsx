@@ -6,7 +6,7 @@ import React, {
   useState,
   useCallback,
 } from 'react';
-import { PermissionsAndroid, Platform } from 'react-native';
+import { Platform } from 'react-native';
 import Geolocation, { GeoPosition } from 'react-native-geolocation-service';
 
 import { eventEmitter } from '../../BLEUniversal';
@@ -36,6 +36,7 @@ import {
   startSmellWalkForegroundService,
   stopSmellWalkForegroundService,
 } from '../background/SmellWalkForegroundService';
+import { ensureFullLocationAccess } from '../location/locationPermissions';
 
 export type LiveLocation = {
   latitude: number;
@@ -168,34 +169,13 @@ export const InfluxDBProvider = ({
     let active = true;
 
     const startLocationWatch = async () => {
-      if (Platform.OS === 'android') {
-        const permission = await PermissionsAndroid.request(
-          PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
+      const access = await ensureFullLocationAccess();
+
+      if (!access.granted) {
+        console.warn(
+          `Full location access is required for smell walks (${access.reason})`,
         );
-
-        if (permission !== PermissionsAndroid.RESULTS.GRANTED) {
-          console.warn('Location permission denied; sensor data will omit GPS');
-          return;
-        }
-
-        if (Platform.Version >= 29) {
-          const backgroundPermission = await PermissionsAndroid.request(
-            PermissionsAndroid.PERMISSIONS.ACCESS_BACKGROUND_LOCATION,
-          );
-
-          if (backgroundPermission !== PermissionsAndroid.RESULTS.GRANTED) {
-            console.warn(
-              'Background location permission denied; background GPS data will be unavailable',
-            );
-          }
-        }
-      } else {
-        const authorization = await Geolocation.requestAuthorization('always');
-
-        if (authorization !== 'granted') {
-          console.warn('Location permission denied; sensor data will omit GPS');
-          return;
-        }
+        return;
       }
 
       if (!active) {
@@ -406,6 +386,11 @@ export const InfluxDBProvider = ({
     async (existingWalkId?: string): Promise<void> => {
       if (isSmellWalkActiveRef.current) {
         return;
+      }
+
+      const locationAccess = await ensureFullLocationAccess();
+      if (!locationAccess.granted) {
+        throw new Error('Full location access is required to start a smell walk');
       }
 
       if (Platform.OS === 'android') {
