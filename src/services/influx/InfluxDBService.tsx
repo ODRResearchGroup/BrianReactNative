@@ -390,7 +390,9 @@ export const InfluxDBProvider = ({
 
       const locationAccess = await ensureFullLocationAccess();
       if (!locationAccess.granted) {
-        throw new Error('Full location access is required to start a smell walk');
+        throw new Error(
+          'Full location access is required to start a smell walk',
+        );
       }
 
       if (Platform.OS === 'android') {
