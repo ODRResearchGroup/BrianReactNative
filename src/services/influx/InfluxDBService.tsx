@@ -155,6 +155,15 @@ export const InfluxDBProvider = ({
   const walkTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
+    interruptActiveWalks(Date.now()).catch(error => {
+      console.warn(
+        'Failed to mark previously active walks as interrupted:',
+        error,
+      );
+    });
+  }, []);
+
+  useEffect(() => {
     let watchId: number | null = null;
     let active = true;
 
@@ -257,13 +266,6 @@ export const InfluxDBProvider = ({
     const deviceId = walkDeviceIdRef.current || 'unknown';
 
     try {
-      /*
-       * SQLite remains the local source of truth.
-       *
-       * InfluxDB is an additional remote destination. This means that a
-       * temporary network failure does not cause the local sensor sample
-       * to disappear.
-       */
       await insertSensorRecord({
         id: `${currentWalkId}-${recordedAt}`,
         title: currentWalkId,
@@ -303,13 +305,6 @@ export const InfluxDBProvider = ({
         deltaEtoh: null,
         deltaNo2: null,
 
-        /*
-         * These are required by the current SensorRecord type.
-         *
-         * SQLite is still responsible for its normal syncStatus/syncedAt
-         * fields. These three fields describe the Influx side of the
-         * record.
-         */
         influxStatus: 'pending',
         influxSyncedAt: null,
         influxLastError: null,
@@ -317,9 +312,6 @@ export const InfluxDBProvider = ({
 
       console.log(`Stored smell walk sample ${currentWalkId}`);
 
-      /*
-       * Send the same sample to InfluxDB after local persistence succeeds.
-       */
       try {
         const point = buildInfluxPoint(
           currentWalkId,

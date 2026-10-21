@@ -71,10 +71,11 @@ Data flow: BLE notification → `BLEUniversal` decodes float32 → updates `char
 Don't change these without a coordinated firmware change.
 
 - Device name `Brian-XXXXXX` (unique per device). On Android, `device.id` is the MAC address; prefer the name as a human-readable device ID.
-- Every value is a **4-byte little-endian float32**. Gas channels are **volts** (not ppm, despite some `units: 'ppm'` labels in the code).
+- Sensor values are **4-byte little-endian float32**. Gas channels are **volts** (not ppm, despite some `units: 'ppm'` labels in the code). Battery percentage is an unsigned byte; estimated runtime is a 4-byte little-endian float32 in hours.
 - The firmware only creates characteristics for sensor boards it detects, so **subscribe only to characteristics that exist after discovery**, and don't let one missing characteristic break the rest.
 - Firmware notifies each channel in turn, then waits 5 s; values arrive one at a time and must be **combined into snapshots** in the app.
 - ESS service `0000181a-0000-1000-8000-00805f9b34fb`; custom service `de664a17-7db4-449f-97ba-5514e19a9d94`.
+- Battery percentage: Battery Service `0000180f-0000-1000-8000-00805f9b34fb`, characteristic `00002a19-0000-1000-8000-00805f9b34fb`; estimated runtime: custom characteristic `d5e4f3a2-b1c0-4d9e-8f7a-6b5c4d3e2f10`. Both are notified and exposed in `characteristicValues` as `Battery Percentage` and `Battery Runtime`.
 
 | Channel               | Characteristic                         | Unit                                             |
 | --------------------- | -------------------------------------- | ------------------------------------------------ |
@@ -99,7 +100,7 @@ Don't change these without a coordinated firmware change.
 
 (16-bit UUIDs expand to `0000XXXX-0000-1000-8000-00805f9b34fb`.)
 
-**Board status** (`sensors.ts` → `BOARD_STATUS_CHARACTERISTIC_UUID`/`BOARD_STATUS_DEFINITIONS`): bit _n_ set = that I2C board was detected at boot (bit 0/1/2 = ADS1/ADS2/ADS3, bit 3 = BME680). Not live — the firmware never re-checks after boot, so this won't catch a board failing mid-walk. Read once via `readBoardStatus()` right after connecting (see `BLEScreen.tsx`); it is not a `SENSOR_DEFINITIONS` entry since it isn't a notified sensor value. Battery monitor status is not implemented (separate issue).
+**Board status** (`sensors.ts` → `BOARD_STATUS_CHARACTERISTIC_UUID`/`BOARD_STATUS_DEFINITIONS`): bit _n_ set = that I2C board was detected at boot (bit 0/1/2 = ADS1/ADS2/ADS3, bit 3 = BME680). Not live — the firmware never re-checks after boot, so this won't catch a board failing mid-walk. Read once via `readBoardStatus()` right after connecting (see `BLEScreen.tsx`); it is not a `SENSOR_DEFINITIONS` entry since it isn't a notified sensor value. Battery characteristics are registered separately in `BATTERY_CHARACTERISTIC_DEFINITIONS` because their payload formats differ from sensor floats.
 
 ## Known problems and gotchas
 

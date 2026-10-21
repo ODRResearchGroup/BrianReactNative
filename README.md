@@ -61,6 +61,12 @@ Configure these GitHub Actions secrets before the first release:
 The same keystore must be used for every release or Android will reject the APK
 as an update to an already-installed app.
 
+When installing a release over an existing app, `versionCode` in
+`android/app/build.gradle` must be higher than the installed version. Increase
+it for each release update. If installation reports
+`INSTALL_FAILED_VERSION_DOWNGRADE`, either increase the version code or
+uninstall the existing app first; uninstalling may remove its local data.
+
 ### Pull request checks
 
 `.github/workflows/quality.yml` runs lint, typecheck, format, Jest and an

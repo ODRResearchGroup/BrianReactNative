@@ -44,6 +44,8 @@ jest.mock('../src/services/database/db', () => ({
 
 jest.mock('../src/components/common/LiveLocationMap', () => () => null);
 
+jest.mock('../src/components/common/CustomRadarChart', () => () => null);
+
 jest.mock('../src/components/common/FingerprintModal', () => () => null);
 
 jest.mock('../src/services/sync/exportService', () => ({

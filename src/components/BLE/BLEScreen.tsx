@@ -9,9 +9,12 @@ import {
   ScrollView,
 } from 'react-native';
 import KeepAwake from 'react-native-keep-awake';
+import { BatteryIndicator, BatteryLifetime } from '../common/BatteryStatus';
 import { useBLE } from '../../BLEUniversal';
 import {
+  BATTERY_CHARACTERISTIC_DEFINITIONS,
   BOARD_STATUS_DEFINITIONS,
+  SENSOR_DEFINITIONS,
   SENSOR_DATA_JSON_CHARACTERISTIC_UUID,
   CUSTOM_SERVICE_UUID,
   isBoardStatusBitSet,
@@ -21,6 +24,7 @@ const BLELoggerApp = () => {
   const {
     devices,
     connectedDevice,
+    characteristicValues,
     boardStatus,
     scanForDevices,
     connectToDevice,
@@ -51,15 +55,32 @@ const BLELoggerApp = () => {
         }
       }
       const jsonPair = `${CUSTOM_SERVICE_UUID.toLowerCase()}:${SENSOR_DATA_JSON_CHARACTERISTIC_UUID}`;
-      const notificationSpecs = discoveredPairs.has(jsonPair)
-        ? [
-            {
-              serviceUUID: CUSTOM_SERVICE_UUID,
-              characteristicUUID: SENSOR_DATA_JSON_CHARACTERISTIC_UUID,
-              sensorKey: 'sensor-data-json',
-            },
-          ]
-        : [];
+      const notificationSpecs = [
+        ...(discoveredPairs.has(jsonPair)
+          ? [
+              {
+                serviceUUID: CUSTOM_SERVICE_UUID,
+                characteristicUUID: SENSOR_DATA_JSON_CHARACTERISTIC_UUID,
+                label: 'Sensor data (JSON)',
+                sensorKey: 'sensor-data-json',
+              },
+            ]
+          : SENSOR_DEFINITIONS.filter(sensor =>
+              discoveredPairs.has(
+                `${sensor.serviceUUID.toLowerCase()}:${sensor.characteristicUUID.toLowerCase()}`,
+              ),
+            ).map(sensor => ({
+              serviceUUID: sensor.serviceUUID,
+              characteristicUUID: sensor.characteristicUUID,
+              label: sensor.label,
+              sensorKey: sensor.key,
+            }))),
+        ...BATTERY_CHARACTERISTIC_DEFINITIONS.filter(characteristic =>
+          discoveredPairs.has(
+            `${characteristic.serviceUUID.toLowerCase()}:${characteristic.characteristicUUID.toLowerCase()}`,
+          ),
+        ),
+      ];
       await enableNotifications(connectedDeviceInstance, notificationSpecs);
       await readBoardStatus(connectedDeviceInstance);
       setSelectedDeviceId(null);
@@ -99,23 +120,28 @@ const BLELoggerApp = () => {
                 </Text>
               </View>
             ) : (
-              devices
-                .filter(device => device.name?.startsWith('Brian'))
-                .map(device => {
-                  const isConnected = connectedDevice?.id === device.id;
-                  const isSelected = selectedDeviceId === device.id;
+              devices.map(device => {
+                const isConnected = connectedDevice?.id === device.id;
+                const isSelected = selectedDeviceId === device.id;
+                const batteryPercentage = isConnected
+                  ? characteristicValues['Battery Percentage']
+                  : undefined;
+                const batteryRuntime = isConnected
+                  ? characteristicValues['Battery Runtime']
+                  : undefined;
 
-                  return (
-                    <Pressable
-                      key={device.id}
-                      onPress={() =>
-                        !isConnected && setSelectedDeviceId(device.id)
-                      }
-                      style={[
-                        styles.deviceItem,
-                        isSelected && styles.deviceItemSelected,
-                      ]}
-                      disabled={isConnected}>
+                return (
+                  <Pressable
+                    key={device.id}
+                    onPress={() =>
+                      !isConnected && setSelectedDeviceId(device.id)
+                    }
+                    style={[
+                      styles.deviceItem,
+                      isSelected && styles.deviceItemSelected,
+                    ]}
+                    disabled={isConnected}>
+                    <View style={styles.deviceInfo}>
                       <Text style={styles.deviceName}>
                         {device.name || 'Unnamed Device'}
                       </Text>
@@ -126,9 +152,16 @@ const BLELoggerApp = () => {
                         ]}>
                         {isConnected ? 'Connected' : 'Not connected'}
                       </Text>
-                    </Pressable>
-                  );
-                })
+                      {isConnected && (
+                        <BatteryLifetime runtimeHours={batteryRuntime} />
+                      )}
+                    </View>
+                    {isConnected && (
+                      <BatteryIndicator percentage={batteryPercentage} />
+                    )}
+                  </Pressable>
+                );
+              })
             )}
           </View>
         </View>
@@ -240,6 +273,10 @@ const styles = StyleSheet.create({
     backgroundColor: 'white',
     borderBottomWidth: 1,
     borderBottomColor: '#f0f0f0',
+  },
+  deviceInfo: {
+    flex: 1,
+    marginRight: 12,
   },
   deviceItemSelected: {
     backgroundColor: '#f0f8ff',

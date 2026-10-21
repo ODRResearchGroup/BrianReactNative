@@ -31,6 +31,7 @@ import {
   Play,
   X,
 } from 'lucide-react-native';
+import { ENV_SENSOR_DEFINITIONS } from '../../sensors';
 import { SENSOR_DEFINITIONS } from '../../sensors';
 
 type SensorValue = {
@@ -196,6 +197,16 @@ export default function SmellWalkScreen() {
       unit: sensor.unit,
     }));
   }, [characteristicValues]);
+  const environmentalValues = useMemo(
+    () =>
+      ENV_SENSOR_DEFINITIONS.map(sensor => ({
+        key: sensor.key,
+        label: sensor.label,
+        value: characteristicValues[sensor.key],
+        unit: sensor.unit,
+      })),
+    [characteristicValues],
+  );
 
   const handleStopWalk = async () => {
     try {
@@ -347,6 +358,18 @@ export default function SmellWalkScreen() {
               </View>
             ))}
           </View>
+        </View>
+        <View style={styles.envCard}>
+          <Text style={styles.sectionTitle}>Environmental</Text>
+          {environmentalValues.map(sensor => (
+            <View key={sensor.key} style={styles.envRow}>
+              <Text style={styles.envLabel}>{sensor.label}</Text>
+              <Text style={styles.envValue}>
+                {sensor.value == null ? '—' : sensor.value.toFixed(2)}{' '}
+                {sensor.unit}
+              </Text>
+            </View>
+          ))}
         </View>
 
         <View style={styles.actions}>
@@ -528,6 +551,17 @@ const styles = StyleSheet.create({
   sensorCard: {
     marginTop: 12,
   },
+  envCard: {
+    marginTop: 12,
+    gap: 8,
+  },
+  envRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  envLabel: { fontSize: 13, color: '#555' },
+  envValue: { fontSize: 13, color: '#111', fontWeight: '600' },
+  slider: { width: '100%', height: 36 },
   sensorGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 },
   sensorCell: {
     width: '23%',

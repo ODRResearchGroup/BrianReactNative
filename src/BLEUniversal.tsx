@@ -29,7 +29,10 @@ type BLEContextType = {
     characteristics: {
       serviceUUID: string;
       characteristicUUID: string;
+      label: string;
+      format?: 'float32' | 'uint8';
       sensorKey: string;
+      emitEvent?: boolean;
     }[],
   ) => Promise<void>;
   readBoardStatus: (device: Device) => Promise<number | null>;
@@ -146,13 +149,19 @@ export const BLEProvider = ({ children }: { children: React.ReactNode }) => {
     characteristics: {
       serviceUUID: string;
       characteristicUUID: string;
+      label: string;
+      format?: 'float32' | 'uint8';
       sensorKey: string;
+      emitEvent?: boolean;
     }[],
   ) => {
     for (const {
       serviceUUID,
       characteristicUUID,
+      label,
+      format = 'float32',
       sensorKey,
+      emitEvent = true,
     } of characteristics) {
       console.log(
         'Enabling notification for',
@@ -175,7 +184,7 @@ export const BLEProvider = ({ children }: { children: React.ReactNode }) => {
 
             if (
               characteristicUUID.toLowerCase() ===
-              SENSOR_DATA_JSON_CHARACTERISTIC_UUID
+              SENSOR_DATA_JSON_CHARACTERISTIC_UUID.toLowerCase()
             ) {
               try {
                 const binary =
@@ -238,8 +247,10 @@ export const BLEProvider = ({ children }: { children: React.ReactNode }) => {
               return;
             }
 
-            // Decode base64 -> float32 (ESP32 sends 4-byte float little-endian)
-            const base64ToFloat32 = (base64String: string): number => {
+            const decodeBase64Value = (
+              base64String: string,
+              valueFormat: 'float32' | 'uint8',
+            ): number | null => {
               try {
                 let bytes: Uint8Array;
 
@@ -258,10 +269,20 @@ export const BLEProvider = ({ children }: { children: React.ReactNode }) => {
                     buf.byteLength,
                   );
                 } else {
-                  console.warn(
+                  throw new Error(
                     'No base64 decoder available in this environment',
                   );
-                  return 0;
+                }
+
+                const expectedLength = valueFormat === 'uint8' ? 1 : 4;
+                if (bytes.byteLength !== expectedLength) {
+                  throw new Error(
+                    `Expected ${expectedLength} bytes for ${valueFormat}, received ${bytes.byteLength}`,
+                  );
+                }
+
+                if (valueFormat === 'uint8') {
+                  return bytes[0];
                 }
 
                 const view = new DataView(
@@ -270,35 +291,45 @@ export const BLEProvider = ({ children }: { children: React.ReactNode }) => {
                   bytes.byteLength,
                 );
                 return view.getFloat32(0, true);
-              } catch (err) {
-                console.error('Base64->float decode error:', err);
-                return 0;
+              } catch (decodeError) {
+                console.error(
+                  `Base64->${valueFormat} decode error:`,
+                  decodeError,
+                );
+                return null;
               }
             };
 
-            const voltageValue = base64ToFloat32(rawValue);
+            const decodedValue = decodeBase64Value(rawValue, format);
+            if (decodedValue === null || !Number.isFinite(decodedValue)) {
+              console.error(`Invalid ${label} notification value`);
+              return;
+            }
 
             // Update local state for UI - store raw value directly
             setCharacteristicValues(prev => ({
               ...prev,
-              [sensorKey]: voltageValue,
+              [label]: decodedValue,
+              [sensorKey]: decodedValue,
             }));
 
-            // Emit BLE data updated event for InfluxDB integration
-            const bleEvent: BLEDataUpdated = {
-              type: 'ble_data_updated',
-              timestamp: new Date(),
-              deviceId: device.id,
-              serviceUUID,
-              characteristicUUID,
-              rawValue,
-              decodedValue: voltageValue,
-              source: device.name || 'Unknown Device',
-            };
+            if (emitEvent) {
+              const bleEvent: BLEDataUpdated = {
+                type: 'ble_data_updated',
+                timestamp: new Date(),
+                deviceId: device.id,
+                serviceUUID,
+                characteristicUUID,
+                rawValue,
+                decodedValue,
+                source: device.name || 'Unknown Device',
+              };
 
-            eventEmitter.emit('ble_data_updated', bleEvent);
+              eventEmitter.emit('ble_data_updated', bleEvent);
+            }
 
-            console.log(`${sensorKey}: ${voltageValue}`);
+            console.log(`${label}: ${decodedValue}`);
+            console.log(`${sensorKey}: ${decodedValue}`);
           },
         );
       } catch (notificationError) {
