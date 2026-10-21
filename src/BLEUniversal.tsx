@@ -6,6 +6,8 @@ import { AppEventEmitter, BLEDataUpdated } from './types/events';
 import {
   BOARD_STATUS_CHARACTERISTIC_UUID,
   CUSTOM_SERVICE_UUID,
+  SENSOR_BY_CHARACTERISTIC_UUID,
+  SENSOR_DATA_JSON_CHARACTERISTIC_UUID,
 } from './sensors';
 
 // Create a global event emitter instance
@@ -180,6 +182,71 @@ export const BLEProvider = ({ children }: { children: React.ReactNode }) => {
 
             const rawValue = characteristic?.value ?? '';
 
+            if (
+              characteristicUUID.toLowerCase() ===
+              SENSOR_DATA_JSON_CHARACTERISTIC_UUID.toLowerCase()
+            ) {
+              try {
+                const binary =
+                  typeof atob === 'function'
+                    ? atob(rawValue)
+                    : Buffer.from(rawValue, 'base64').toString('utf8');
+                const parsed: unknown = JSON.parse(binary.replace(/\0/g, ''));
+                if (
+                  !parsed ||
+                  typeof parsed !== 'object' ||
+                  Array.isArray(parsed)
+                ) {
+                  throw new Error('Sensor JSON payload is not an object');
+                }
+
+                const payload = parsed as Record<string, unknown>;
+                if (typeof payload.board_status === 'number') {
+                  setBoardStatus(payload.board_status);
+                }
+                const timestamp =
+                  typeof payload.timestamp === 'number' &&
+                  Number.isFinite(payload.timestamp)
+                    ? new Date(payload.timestamp * 1000)
+                    : new Date();
+
+                Object.entries(payload).forEach(([key, value]) => {
+                  const sensor = SENSOR_BY_CHARACTERISTIC_UUID
+                    ? Object.values(SENSOR_BY_CHARACTERISTIC_UUID).find(
+                        definition => definition.key === key,
+                      )
+                    : undefined;
+                  if (
+                    !sensor ||
+                    typeof value !== 'number' ||
+                    !Number.isFinite(value)
+                  ) {
+                    return;
+                  }
+
+                  setCharacteristicValues(prev => ({
+                    ...prev,
+                    [sensor.key]: value,
+                  }));
+
+                  const bleEvent: BLEDataUpdated = {
+                    type: 'ble_data_updated',
+                    timestamp,
+                    deviceId: device.id,
+                    serviceUUID: sensor.serviceUUID,
+                    characteristicUUID: sensor.characteristicUUID,
+                    rawValue,
+                    decodedValue: value,
+                    source: device.name || 'Unknown Device',
+                  };
+                  eventEmitter.emit('ble_data_updated', bleEvent);
+                });
+              } catch (jsonError) {
+                console.error('Sensor JSON decode error:', jsonError);
+              }
+              return;
+            }
+
             const decodeBase64Value = (
               base64String: string,
               valueFormat: 'float32' | 'uint8',
@@ -224,8 +291,11 @@ export const BLEProvider = ({ children }: { children: React.ReactNode }) => {
                   bytes.byteLength,
                 );
                 return view.getFloat32(0, true);
-              } catch (err) {
-                console.error(`Base64->${valueFormat} decode error:`, err);
+              } catch (decodeError) {
+                console.error(
+                  `Base64->${valueFormat} decode error:`,
+                  decodeError,
+                );
                 return null;
               }
             };
@@ -262,8 +332,8 @@ export const BLEProvider = ({ children }: { children: React.ReactNode }) => {
             console.log(`${sensorKey}: ${decodedValue}`);
           },
         );
-      } catch (error) {
-        console.error('Enable notification error:', error);
+      } catch (notificationError) {
+        console.error('Enable notification error:', notificationError);
       }
     }
   };
