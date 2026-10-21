@@ -1,5 +1,7 @@
 export const ESS_SERVICE_UUID = '0000181a-0000-1000-8000-00805f9b34fb';
 export const CUSTOM_SERVICE_UUID = 'de664a17-7db4-449f-97ba-5514e19a9d94';
+export const SENSOR_DATA_JSON_CHARACTERISTIC_UUID =
+  '9f4c8f2b-5e0a-4b8e-9f0d-6d9a1c2e7b34';
 
 export type SensorKind = 'gas' | 'env';
 

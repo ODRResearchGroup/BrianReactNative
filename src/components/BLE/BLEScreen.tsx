@@ -12,7 +12,8 @@ import KeepAwake from 'react-native-keep-awake';
 import { useBLE } from '../../BLEUniversal';
 import {
   BOARD_STATUS_DEFINITIONS,
-  SENSOR_DEFINITIONS,
+  SENSOR_DATA_JSON_CHARACTERISTIC_UUID,
+  CUSTOM_SERVICE_UUID,
   isBoardStatusBitSet,
 } from '../../sensors';
 
@@ -49,15 +50,16 @@ const BLELoggerApp = () => {
           );
         }
       }
-      const notificationSpecs = SENSOR_DEFINITIONS.filter(sensor =>
-        discoveredPairs.has(
-          `${sensor.serviceUUID.toLowerCase()}:${sensor.characteristicUUID.toLowerCase()}`,
-        ),
-      ).map(sensor => ({
-        serviceUUID: sensor.serviceUUID,
-        characteristicUUID: sensor.characteristicUUID,
-        sensorKey: sensor.key,
-      }));
+      const jsonPair = `${CUSTOM_SERVICE_UUID.toLowerCase()}:${SENSOR_DATA_JSON_CHARACTERISTIC_UUID}`;
+      const notificationSpecs = discoveredPairs.has(jsonPair)
+        ? [
+            {
+              serviceUUID: CUSTOM_SERVICE_UUID,
+              characteristicUUID: SENSOR_DATA_JSON_CHARACTERISTIC_UUID,
+              sensorKey: 'sensor-data-json',
+            },
+          ]
+        : [];
       await enableNotifications(connectedDeviceInstance, notificationSpecs);
       await readBoardStatus(connectedDeviceInstance);
       setSelectedDeviceId(null);
