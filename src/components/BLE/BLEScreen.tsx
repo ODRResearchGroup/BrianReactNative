@@ -18,6 +18,19 @@ import {
   isBoardStatusBitSet,
 } from '../../sensors';
 
+const BLUETOOTH_BASE_UUID = '-0000-1000-8000-00805f9b34fb';
+
+function normalizeUuid(uuid: string): string {
+  const value = uuid.toLowerCase().replace(/^0x/, '');
+  if (/^[0-9a-f]{4}$/.test(value)) {
+    return `0000${value}${BLUETOOTH_BASE_UUID}`;
+  }
+  if (/^[0-9a-f]{8}$/.test(value)) {
+    return `${value}${BLUETOOTH_BASE_UUID}`;
+  }
+  return value;
+}
+
 const BLELoggerApp = () => {
   const {
     devices,
@@ -42,33 +55,57 @@ const BLELoggerApp = () => {
 
     try {
       const connectedDeviceInstance = await connectToDevice(selectedDevice);
-      const discoveredPairs = new Set<string>();
-      const services = await connectedDeviceInstance.services();
-      for (const service of services) {
-        const characteristics = await service.characteristics();
-        for (const characteristic of characteristics) {
-          discoveredPairs.add(
-            `${service.uuid.toLowerCase()}:${characteristic.uuid.toLowerCase()}`,
+      const discoveredSpecifications = new Map(
+        [
+          ...SENSOR_DEFINITIONS.map(sensor => ({
+            ...sensor,
+            sensorKey: sensor.key,
+            format: 'float32' as const,
+            emitEvent: true,
+          })),
+          ...BATTERY_CHARACTERISTIC_DEFINITIONS,
+        ].map(definition => [
+          `${normalizeUuid(definition.serviceUUID)}:${normalizeUuid(
+            definition.characteristicUUID,
+          )}`,
+          definition,
+        ]),
+      );
+      const notificationSpecs: {
+        serviceUUID: string;
+        characteristicUUID: string;
+        label: string;
+        sensorKey: string;
+        format?: 'float32' | 'uint8';
+        emitEvent?: boolean;
+      }[] = [];
+
+      for (const service of await connectedDeviceInstance.services()) {
+        for (const characteristic of await service.characteristics()) {
+          const definition = discoveredSpecifications.get(
+            `${normalizeUuid(service.uuid)}:${normalizeUuid(
+              characteristic.uuid,
+            )}`,
           );
+          if (definition) {
+            notificationSpecs.push({
+              serviceUUID: service.uuid,
+              characteristicUUID: characteristic.uuid,
+              label: definition.label,
+              sensorKey: definition.sensorKey,
+              format: definition.format,
+              emitEvent: definition.emitEvent,
+            });
+          }
         }
       }
-      const notificationSpecs = [
-        ...SENSOR_DEFINITIONS.filter(sensor =>
-          discoveredPairs.has(
-            `${sensor.serviceUUID.toLowerCase()}:${sensor.characteristicUUID.toLowerCase()}`,
-          ),
-        ).map(sensor => ({
-          serviceUUID: sensor.serviceUUID,
-          characteristicUUID: sensor.characteristicUUID,
-          label: sensor.label,
-          sensorKey: sensor.key,
-        })),
-        ...BATTERY_CHARACTERISTIC_DEFINITIONS.filter(characteristic =>
-          discoveredPairs.has(
-            `${characteristic.serviceUUID.toLowerCase()}:${characteristic.characteristicUUID.toLowerCase()}`,
-          ),
-        ),
-      ];
+
+      if (notificationSpecs.length === 0) {
+        throw new Error(
+          'Connected device exposed no known sensor characteristics',
+        );
+      }
+
       await enableNotifications(connectedDeviceInstance, notificationSpecs);
       await readBoardStatus(connectedDeviceInstance);
       setSelectedDeviceId(null);

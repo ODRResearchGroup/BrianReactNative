@@ -262,6 +262,31 @@ export const BLEProvider = ({ children }: { children: React.ReactNode }) => {
             console.log(`${sensorKey}: ${decodedValue}`);
           },
         );
+
+        const initialValue = await device.readCharacteristicForService(
+          serviceUUID,
+          characteristicUUID,
+        );
+        if (initialValue.value) {
+          const binary =
+            typeof atob === 'function'
+              ? atob(initialValue.value)
+              : Buffer.from(initialValue.value, 'base64').toString('binary');
+          const bytes = Uint8Array.from(binary, character =>
+            character.charCodeAt(0),
+          );
+          const decodedValue =
+            format === 'uint8'
+              ? bytes[0]
+              : new DataView(bytes.buffer).getFloat32(0, true);
+          if (Number.isFinite(decodedValue)) {
+            setCharacteristicValues(prev => ({
+              ...prev,
+              [label]: decodedValue,
+              [sensorKey]: decodedValue,
+            }));
+          }
+        }
       } catch (error) {
         console.error('Enable notification error:', error);
       }
