@@ -37,7 +37,7 @@ export const SENSOR_DEFINITIONS = [
   {
     key: 'CH4',
     label: 'Methane',
-    chartLabel: 'Ch4',
+    chartLabel: 'CH₄',
     serviceUUID: ESS_SERVICE_UUID,
     characteristicUUID: '00002bd1-0000-1000-8000-00805f9b34fb',
     unit: 'V',
@@ -46,7 +46,7 @@ export const SENSOR_DEFINITIONS = [
   {
     key: 'NO2',
     label: 'Nitrogen Dioxide',
-    chartLabel: 'No2',
+    chartLabel: 'NO₂',
     serviceUUID: ESS_SERVICE_UUID,
     characteristicUUID: '00002bd2-0000-1000-8000-00805f9b34fb',
     unit: 'V',
@@ -64,7 +64,7 @@ export const SENSOR_DEFINITIONS = [
   {
     key: 'NH3',
     label: 'Ammonia',
-    chartLabel: 'NH3',
+    chartLabel: 'NH₃',
     serviceUUID: ESS_SERVICE_UUID,
     characteristicUUID: '00002bcf-0000-1000-8000-00805f9b34fb',
     unit: 'V',
@@ -91,7 +91,7 @@ export const SENSOR_DEFINITIONS = [
   {
     key: 'Etoh',
     label: 'Ethanol',
-    chartLabel: 'Etoh',
+    chartLabel: 'EtOH',
     serviceUUID: CUSTOM_SERVICE_UUID,
     characteristicUUID: 'f8156843-6d98-4ba2-8014-1cf03d7dedb8',
     unit: 'V',
@@ -100,7 +100,7 @@ export const SENSOR_DEFINITIONS = [
   {
     key: 'H2S',
     label: 'Hydrogen Sulfide',
-    chartLabel: 'H2S',
+    chartLabel: 'H₂S',
     serviceUUID: CUSTOM_SERVICE_UUID,
     characteristicUUID: '87dc71bd-29a4-4218-a2a7-83fd2a69cc40',
     unit: 'V',
@@ -127,7 +127,7 @@ export const SENSOR_DEFINITIONS = [
   {
     key: 'H2',
     label: 'Hydrogen',
-    chartLabel: 'H2',
+    chartLabel: 'H₂',
     serviceUUID: CUSTOM_SERVICE_UUID,
     characteristicUUID: '0176655b-0007-4e02-abc1-e9f2d6815f46',
     unit: 'V',

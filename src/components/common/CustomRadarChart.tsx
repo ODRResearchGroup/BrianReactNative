@@ -22,8 +22,14 @@ type RadarChartProps = {
   }>;
   size?: number;
   maxValue?: number;
-  zoomLevel?: number; // <-- ADD THIS
+  zoomLevel?: number;
   gridLevels?: number;
+  /** Extra padding (px) around the chart area so labels aren't clipped.
+   *  Defaults to 28 for the full-size chart, pass a smaller value for
+   *  compact inline views where labels are suppressed. */
+  labelPadding?: number;
+  /** When true, axis labels are hidden (useful for small inline views). */
+  hideLabels?: boolean;
 };
 
 const CustomRadarChart: React.FC<RadarChartProps> = ({
@@ -32,6 +38,7 @@ const CustomRadarChart: React.FC<RadarChartProps> = ({
   maxValue = 5,
   gridLevels = 4,
   zoomLevel = 1,
+  hideLabels,
 }) => {
   const centerX = size / 2;
   const centerY = size / 2;
@@ -98,6 +105,10 @@ const CustomRadarChart: React.FC<RadarChartProps> = ({
 
   // Generate axis labels
   const generateLabels = () => {
+    if (hideLabels) {
+      return;
+    }
+
     const labels = [];
     const labelOffset = 25;
 
