@@ -1,6 +1,7 @@
 import 'react-native-gesture-handler';
 import React, { useEffect } from 'react';
 import { AppState, ImageBackground, StyleSheet } from 'react-native';
+import NetInfo from '@react-native-community/netinfo';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -108,9 +109,16 @@ export default function App() {
         checkAndPromptForAppUpdate();
       }
     });
+    const connectivitySub = NetInfo.addEventListener(state => {
+      if (state.isConnected && state.isInternetReachable !== false) {
+        runSyncWorker().catch(() => {});
+        runAudioProcessingPoller().catch(() => {});
+      }
+    });
     return () => {
       clearInterval(interval);
       sub.remove();
+      connectivitySub();
     };
   }, []);
 

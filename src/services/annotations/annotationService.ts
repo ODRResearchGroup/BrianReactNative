@@ -1,5 +1,5 @@
-import Config from 'react-native-config';
 import { enqueueSync } from '../database/db';
+import { brianBackendHeaders, brianBackendUrl, BrianMedia } from '../brianBackend';
 import 'react-native-get-random-values';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -12,24 +12,41 @@ export type DrawingStroke = {
 
 export type SaveAnnotationPayload = {
   recordingId: string;
-  sensorRecordId?: string; // link back to sensor fingerprint
-  type: 'photo' | 'audio';
-  description: string;
-  strokes?: DrawingStroke[];
-  selectedTags: string[];
+  sensorReadings?: Record<string, number | null>;
+  title?: string;
+  note?: string;
   timestamp: string;
-  latitude: string;
-  longitude: string;
+  latitude?: number | string | null;
+  longitude?: number | string | null;
+  photo?: string;
+  audio?: string;
+  deviceName?: string;
+  smellWalkId?: string;
+  media?: BrianMedia[];
+  // Kept only for local/offline records that have not migrated yet.
+  description?: string;
+  type?: 'photo' | 'audio' | 'fingerprint';
+  selectedTags?: string[];
+  strokes?: DrawingStroke[];
   latitudeRaw?: number;
   longitudeRaw?: number;
   accuracyM?: number;
-  capturedAtMs?: number;
+  sensorRecordId?: string;
   photoUri?: string;
-  annotationIndex: number;
+  capturedAtMs?: number;
+  annotationIndex?: number;
   imageBlobName?: string;
   imageContainer?: string;
   bundleBlobName?: string;
   bundleContainer?: string;
+  localMedia?: LocalAnnotationMedia[];
+};
+
+export type LocalAnnotationMedia = {
+  localUri: string;
+  contentType: string;
+  fileName: string;
+  role: 'image' | 'audio';
 };
 
 export type AnnotationRecord = SaveAnnotationPayload & {
@@ -38,51 +55,66 @@ export type AnnotationRecord = SaveAnnotationPayload & {
   schema: string;
 };
 
-function getConfig() {
-  const baseUrl = Config.AZURE_FUNCTION_BASE_URL;
-  const functionKey = Config.AZURE_SAVE_ANNOTATION_KEY;
-  if (!baseUrl || !functionKey) {
-    throw new Error(
-      'Missing AZURE_FUNCTION_BASE_URL or AZURE_SAVE_ANNOTATION_KEY',
-    );
-  }
-  return { baseUrl, functionKey };
-}
-
-function qs(
-  baseUrl: string,
-  path: string,
-  key: string,
-  params: Record<string, string> = {},
-) {
-  const q = new URLSearchParams({ code: key, ...params });
-  return `${baseUrl}/api/${path}?${q.toString()}`;
-}
-
 export async function saveAnnotationRemote(
   payload: SaveAnnotationPayload,
 ): Promise<{ annotationId: string }> {
-  const { baseUrl, functionKey } = getConfig();
-  const res = await fetch(qs(baseUrl, 'save-annotation', functionKey), {
+  const backendPayload = {
+    ...payload,
+    latitude: toCoordinate(payload.latitude ?? payload.latitudeRaw),
+    longitude: toCoordinate(payload.longitude ?? payload.longitudeRaw),
+    title: payload.title ?? payload.description ?? '',
+    note: payload.note ?? '',
+    photo: payload.photo ?? payload.media?.find(item => item.role === 'image')?.url ?? null,
+    audio: payload.audio ?? payload.media?.find(item => item.role === 'audio')?.url ?? null,
+  };
+  const res = await fetch(brianBackendUrl('/api/annotations'), {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
+    headers: { ...brianBackendHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify(backendPayload),
   });
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`save-annotation failed: ${res.status} ${text}`);
+    throw new Error(`Brian annotation save failed: ${res.status} ${text}`);
   }
-  return (await res.json()) as { annotationId: string };
+
+  function toCoordinate(value: number | string | null | undefined): number | null {
+    if (value === null || value === undefined || value === '') {
+      return null;
+    }
+    const coordinate = typeof value === 'number' ? value : Number(value);
+    return Number.isFinite(coordinate) ? coordinate : null;
+  }
+  const data = (await res.json()) as { annotation?: { id: string } };
+  return { annotationId: data.annotation?.id ?? payload.recordingId };
+}
+
+export type SaveAnnotationResult = {
+  annotationId: string;
+  queued: boolean;
+};
+
+function isRetryableBackendError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+  return (
+    error.name === 'TypeError' ||
+    /network request failed|failed to fetch|fetch failed|network error/i.test(
+      error.message,
+    )
+  );
 }
 
 export async function saveAnnotation(
   payload: SaveAnnotationPayload,
-): Promise<{ annotationId: string }> {
+): Promise<SaveAnnotationResult> {
   try {
-    return await saveAnnotationRemote(payload);
-  } catch (e: any) {
-    // Only queue on network failure (TypeError). HTTP errors mean bad data — propagate them.
-    if (e?.name !== 'TypeError') {
+    const result = await saveAnnotationRemote(payload);
+    return { ...result, queued: false };
+  } catch (e) {
+    // HTTP errors mean bad data and should be shown to the user; network
+    // failures are retained locally and retried by the sync worker.
+    if (!isRetryableBackendError(e)) {
       throw e;
     }
     await enqueueSync({
@@ -93,16 +125,17 @@ export async function saveAnnotation(
       payloadJson: JSON.stringify(payload),
       createdAt: Date.now(),
     });
-    return { annotationId: payload.recordingId };
+    console.warn('BrianBackend unavailable; annotation queued locally', e);
+    return { annotationId: payload.recordingId, queued: true };
   }
 }
 
 export async function loadAnnotation(
   annotationId: string,
 ): Promise<AnnotationRecord | null> {
-  const { baseUrl, functionKey } = getConfig();
   const res = await fetch(
-    qs(baseUrl, 'get-annotation', functionKey, { annotationId }),
+    brianBackendUrl(`/api/annotations/${encodeURIComponent(annotationId)}`),
+    { headers: brianBackendHeaders() },
   );
   if (res.status === 404) {
     return null;
@@ -111,17 +144,18 @@ export async function loadAnnotation(
     const text = await res.text();
     throw new Error(`get-annotation failed: ${res.status} ${text}`);
   }
-  const json = await res.json();
-  return json.annotation as AnnotationRecord;
+  const json = (await res.json()) as { annotation: AnnotationRecord };
+  return json.annotation;
 }
 
 export async function listAnnotations(): Promise<AnnotationRecord[]> {
-  const { baseUrl, functionKey } = getConfig();
-  const res = await fetch(qs(baseUrl, 'list-annotations', functionKey));
+  const res = await fetch(brianBackendUrl('/api/annotations'), {
+    headers: brianBackendHeaders(),
+  });
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`list-annotations failed: ${res.status} ${text}`);
+    throw new Error(`Brian annotation list failed: ${res.status} ${text}`);
   }
-  const json = await res.json();
-  return (json.annotations ?? []) as AnnotationRecord[];
+  const json = (await res.json()) as { annotations?: AnnotationRecord[] };
+  return json.annotations ?? [];
 }

@@ -47,11 +47,6 @@ import {
   uploadAudioTrackJsonToAzure,
 } from '../../services/audio/audioUpload';
 import { notifyUploadComplete } from '../../services/audio/uploadComplete';
-import { fetchProcessedStatus } from '../../services/audio/processedStatus';
-import {
-  fetchProcessedTranscript,
-  transcriptToPlainText,
-} from '../../services/audio/processedTranscript';
 import 'react-native-get-random-values';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -243,7 +238,7 @@ export default function ExpandedFingerprintView({
         bundleBlobName: prep.bundleUpload.blobName,
         imageBlobName: null,
         imageContainer: null,
-        status: 'uploaded',
+        status: 'transcribed',
         transcriptJson: null,
         selectedTagsJson: null,
         suggestedTagsJson: null,
@@ -256,29 +251,8 @@ export default function ExpandedFingerprintView({
         annotationIndex: null,
       }).catch(() => {});
 
-      setMicPhase('processing');
-
-      pollRef.current = setInterval(async () => {
-        try {
-          const status = await fetchProcessedStatus(recordingId);
-          if (status?.status === 'transcribed') {
-            clearPoll();
-            const transcript = await fetchProcessedTranscript(recordingId);
-            const text = transcript ? transcriptToPlainText(transcript) : '';
-            if (text) {
-              setDescription(text);
-              await refreshTags(text);
-            }
-            setMicPhase('idle');
-            setRecordingDuration('00:00');
-          } else if (status?.status === 'failed') {
-            clearPoll();
-            setMicPhase('error');
-          }
-        } catch (e) {
-          console.warn('STT poll error:', e);
-        }
-      }, 10_000);
+      setMicPhase('idle');
+      setRecordingDuration('00:00');
     } catch (err) {
       Alert.alert('Transcription failed', String(err));
       setMicPhase('error');

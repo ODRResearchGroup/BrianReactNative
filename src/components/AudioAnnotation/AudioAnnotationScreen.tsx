@@ -25,12 +25,7 @@ import {
   startAudioTrack,
   stopAudioTrack,
 } from '../../services/audio/audioTrack';
-import { uploadsPrepare } from '../../services/audio/uploadsPrepare';
-import {
-  uploadAudioToAzure,
-  uploadAudioTrackJsonToAzure,
-} from '../../services/audio/audioUpload';
-import { notifyUploadComplete } from '../../services/audio/uploadComplete';
+import { uploadAnnotationMedia } from '../../services/brianBackend';
 import { insertCapture, enqueueSync } from '../../services/database/db';
 import { fetchSuggestedDescriptors } from '../../services/annotations/suggestDescriptors';
 import { saveAnnotation } from '../../services/annotations/annotationService';
@@ -114,7 +109,7 @@ const Waveform = ({ isActive }: { isActive: boolean }) => {
 
 type Props = NativeStackScreenProps<RootStackParamList, 'AudioAnnotation'>;
 
-export default function AudioAnnotationScreen({ navigation, route }: Props) {
+export default function AudioAnxnotationScreen({ navigation, route }: Props) {
   const { annotationIndex, sensorRecordId } = route.params;
 
   const [inputMode, setInputMode] = useState<InputMode>('record');
@@ -226,32 +221,21 @@ export default function AudioAnnotationScreen({ navigation, route }: Props) {
 
     // Step 2: upload — failure saves locally and queues for retry
     let uploadedOk = false;
+    let uploadedMedia:
+      | Awaited<ReturnType<typeof uploadAnnotationMedia>>
+      | undefined;
     try {
-      const prep = await uploadsPrepare(recordingId, 'm4a');
-      await Promise.all([
-        uploadAudioToAzure(
-          stopResult.localUri,
-          prep.audioUpload.uploadUrl,
-          prep.audioUpload.container,
-          prep.audioUpload.blobName,
-        ),
-        uploadAudioTrackJsonToAzure(
-          trackBundle,
-          prep.bundleUpload.uploadUrl,
-          prep.bundleUpload.container,
-          prep.bundleUpload.blobName,
-          {
-            container: prep.audioUpload.container,
-            blobName: prep.audioUpload.blobName,
-          },
-        ),
-      ]);
+      uploadedMedia = await uploadAnnotationMedia(
+        recordingId,
+        stopResult.localUri,
+        'audio/mp4',
+        `${recordingId}.m4a`,
+      );
       await insertCapture({
         ...baseCapture,
-        bundleBlobName: prep.bundleUpload.blobName,
+        bundleBlobName: null,
         status: 'uploaded',
       });
-      await notifyUploadComplete(recordingId, 'm4a');
       uploadedOk = true;
     } catch {
       await insertCapture({
@@ -279,11 +263,27 @@ export default function AudioAnnotationScreen({ navigation, route }: Props) {
       }).catch(() => {});
     }
 
+    const annotationResult = await saveAnnotation({
+      recordingId,
+      sensorRecordId: sensorRecordId ?? undefined,
+      type: 'audio',
+      description: '',
+      selectedTags: [],
+      timestamp: new Date(startedAt).toISOString(),
+      latitude: coords.latitude,
+      longitude: coords.longitude,
+      latitudeRaw: firstPt?.lat ?? undefined,
+      longitudeRaw: firstPt?.lon ?? undefined,
+      capturedAtMs: startedAt,
+      annotationIndex,
+      media: uploadedMedia ? [uploadedMedia] : undefined,
+    });
+
     setPhase('done');
     setStatusLabel(
-      uploadedOk
+      uploadedOk && !annotationResult.queued
         ? 'Processing in background…'
-        : 'Saved offline — will sync when online',
+        : 'Saved on device — backend unavailable; will sync when online',
     );
     setTimeout(() => navigation.navigate('AnnotationFeed'), 900);
   };
@@ -334,7 +334,7 @@ export default function AudioAnnotationScreen({ navigation, route }: Props) {
         annotationIndex,
       });
 
-      await saveAnnotation({
+      const annotationResult = await saveAnnotation({
         recordingId: captureId,
         sensorRecordId: sensorRecordId ?? undefined,
         type: 'audio',
@@ -347,6 +347,12 @@ export default function AudioAnnotationScreen({ navigation, route }: Props) {
         annotationIndex,
       });
 
+      if (annotationResult.queued) {
+        Alert.alert(
+          'Saved on device',
+          'The backend was unavailable. This fingerprint will sync when the connection is restored.',
+        );
+      }
       navigation.navigate('EditAnnotationTags', { annotationId: captureId });
     } catch (err: any) {
       Alert.alert('Save failed', err.message ?? String(err));

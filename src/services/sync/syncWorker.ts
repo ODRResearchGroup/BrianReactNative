@@ -11,6 +11,7 @@ import {
   saveAnnotation,
   SaveAnnotationPayload,
 } from '../annotations/annotationService';
+import { uploadAnnotationMedia } from '../brianBackend';
 import { uploadsPrepare } from '../audio/uploadsPrepare';
 import {
   uploadAudioToAzure,
@@ -52,7 +53,30 @@ export async function runSyncWorker(): Promise<void> {
             const payload = JSON.parse(
               item.payloadJson,
             ) as SaveAnnotationPayload;
-            await saveAnnotationRemote(payload);
+            const localMedia = payload.localMedia ?? [];
+            const uploadedMedia = await Promise.all(
+              localMedia.map(media =>
+                uploadAnnotationMedia(
+                  payload.recordingId,
+                  media.localUri,
+                  media.contentType,
+                  media.fileName,
+                ),
+              ),
+            );
+            const { localMedia: _localMedia, ...remotePayload } = payload;
+            await saveAnnotationRemote({
+              ...remotePayload,
+              media: [...(payload.media ?? []), ...uploadedMedia],
+              photo:
+                remotePayload.photo ??
+                uploadedMedia.find(item => item.role === 'image')?.url ??
+                undefined,
+              audio:
+                remotePayload.audio ??
+                uploadedMedia.find(item => item.role === 'audio')?.url ??
+                undefined,
+            });
           } else if (item.entityType === 'capture') {
             const payload = JSON.parse(item.payloadJson) as any;
 

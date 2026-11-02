@@ -1165,7 +1165,7 @@ export async function enqueueSync(
 export async function dequeueSyncBatch(limit = 10): Promise<SyncQueueRow[]> {
   const db = await getDb();
   const [res] = await db.executeSql(
-    'SELECT * FROM sync_queue WHERE attempts < 5 ORDER BY created_at ASC LIMIT ?;',
+    'SELECT * FROM sync_queue ORDER BY created_at ASC LIMIT ?;',
     [limit],
   );
   const rows: SyncQueueRow[] = [];
