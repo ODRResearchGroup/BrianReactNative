@@ -1,5 +1,9 @@
 import { enqueueSync } from '../database/db';
-import { brianBackendHeaders, brianBackendUrl, BrianMedia } from '../brianBackend';
+import {
+  brianBackendHeaders,
+  brianBackendUrl,
+  BrianMedia,
+} from '../brianBackend';
 import 'react-native-get-random-values';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -64,8 +68,14 @@ export async function saveAnnotationRemote(
     longitude: toCoordinate(payload.longitude ?? payload.longitudeRaw),
     title: payload.title ?? payload.description ?? '',
     note: payload.note ?? '',
-    photo: payload.photo ?? payload.media?.find(item => item.role === 'image')?.url ?? null,
-    audio: payload.audio ?? payload.media?.find(item => item.role === 'audio')?.url ?? null,
+    photo:
+      payload.photo ??
+      payload.media?.find(item => item.role === 'image')?.url ??
+      null,
+    audio:
+      payload.audio ??
+      payload.media?.find(item => item.role === 'audio')?.url ??
+      null,
   };
   const res = await fetch(brianBackendUrl('/api/annotations'), {
     method: 'POST',
@@ -77,7 +87,9 @@ export async function saveAnnotationRemote(
     throw new Error(`Brian annotation save failed: ${res.status} ${text}`);
   }
 
-  function toCoordinate(value: number | string | null | undefined): number | null {
+  function toCoordinate(
+    value: number | string | null | undefined,
+  ): number | null {
     if (value === null || value === undefined || value === '') {
       return null;
     }

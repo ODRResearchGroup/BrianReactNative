@@ -13,9 +13,7 @@ function getConfig() {
   const baseUrl = Config.BRIAN_BACKEND_URL?.replace(/\/$/, '');
   const token = Config.BRIAN_BACKEND_TOKEN;
   if (!baseUrl || !token) {
-    throw new Error(
-      'Missing BRIAN_BACKEND_URL or BRIAN_BACKEND_TOKEN',
-    );
+    throw new Error('Missing BRIAN_BACKEND_URL or BRIAN_BACKEND_TOKEN');
   }
   return { baseUrl, token };
 }
