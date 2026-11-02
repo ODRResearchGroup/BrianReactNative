@@ -64,17 +64,18 @@ export async function runSyncWorker(): Promise<void> {
                 ),
               ),
             );
-            const { localMedia: _localMedia, ...remotePayload } = payload;
+            const remotePayload = { ...payload };
+            delete remotePayload.localMedia;
             await saveAnnotationRemote({
               ...remotePayload,
               media: [...(payload.media ?? []), ...uploadedMedia],
               photo:
                 remotePayload.photo ??
-                uploadedMedia.find(item => item.role === 'image')?.url ??
+                uploadedMedia.find(media => media.role === 'image')?.url ??
                 undefined,
               audio:
                 remotePayload.audio ??
-                uploadedMedia.find(item => item.role === 'audio')?.url ??
+                uploadedMedia.find(media => media.role === 'audio')?.url ??
                 undefined,
             });
           } else if (item.entityType === 'capture') {
