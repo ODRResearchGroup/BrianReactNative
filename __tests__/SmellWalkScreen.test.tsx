@@ -67,6 +67,14 @@ describe('SmellWalkScreen keep awake behavior', () => {
     jest.clearAllMocks();
   });
 
+  it('activates keep awake and shows recording indicator during a walk', async () => {
+    mockIsSmellWalkActive = true;
+    const { getByText, unmount } = await render(<SmellWalkScreen />);
+    expect(mockActivateKeepAwake).toHaveBeenCalledTimes(1);
+    expect(getByText('Recording')).toBeTruthy();
+    await unmount();
+  });
+
   it('does not touch keep awake when no walk is active', async () => {
     const { unmount } = await render(<SmellWalkScreen />);
 
