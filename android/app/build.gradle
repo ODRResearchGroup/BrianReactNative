@@ -88,8 +88,8 @@ android {
         applicationId "com.blegpsapp02"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 5
-        versionName "1.0"
+        versionCode buildVersionCode
+        versionName buildVersionName
     }
     signingConfigs {
         debug {
