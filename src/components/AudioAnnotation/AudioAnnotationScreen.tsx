@@ -27,7 +27,6 @@ import {
 } from '../../services/audio/audioTrack';
 import { uploadAnnotationMedia } from '../../services/brianBackend';
 import { insertCapture, enqueueSync } from '../../services/database/db';
-import { fetchSuggestedDescriptors } from '../../services/annotations/suggestDescriptors';
 import { saveAnnotation } from '../../services/annotations/annotationService';
 import { usePressAnimation } from '../../hooks/usePressAnimation';
 
@@ -297,20 +296,11 @@ export default function AudioAnxnotationScreen({ navigation, route }: Props) {
       return;
     }
     setSavingText(true);
-    setStatusLabel('Suggesting tags…');
+    setStatusLabel('Saving…');
     try {
       const captureId = uuidv4();
       const capturedAt = Date.now();
       const timestamp = formatTimestamp(capturedAt);
-
-      let selectedTags: string[] = [];
-      let suggestedTags: string[] = [];
-      try {
-        const tagRes = await fetchSuggestedDescriptors(text, captureId);
-        suggestedTags = tagRes.suggestedDescriptors;
-      } catch (e) {
-        console.warn('Tag suggestion failed (non-fatal):', e);
-      }
 
       setStatusLabel('Saving…');
       await insertCapture({
@@ -323,8 +313,8 @@ export default function AudioAnxnotationScreen({ navigation, route }: Props) {
         imageContainer: null,
         status: 'transcribed',
         transcriptJson: null,
-        selectedTagsJson: JSON.stringify(selectedTags),
-        suggestedTagsJson: JSON.stringify(suggestedTags),
+        selectedTagsJson: JSON.stringify([]),
+        suggestedTagsJson: JSON.stringify([]),
         description: text,
         latitudeDisplay: null,
         longitudeDisplay: null,
@@ -339,7 +329,7 @@ export default function AudioAnxnotationScreen({ navigation, route }: Props) {
         sensorRecordId: sensorRecordId ?? undefined,
         type: 'audio',
         description: text,
-        selectedTags,
+        selectedTags: [],
         timestamp,
         latitude: '00.0000° N',
         longitude: '00.0000° E',

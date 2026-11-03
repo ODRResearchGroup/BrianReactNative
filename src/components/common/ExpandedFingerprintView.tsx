@@ -40,13 +40,7 @@ import {
   SensorReadings,
 } from '../../types/fingerprintTypes';
 import { updateSensorRecord, insertCapture } from '../../services/database/db';
-import { fetchSuggestedDescriptors } from '../../services/annotations/suggestDescriptors';
-import { uploadsPrepare } from '../../services/audio/uploadsPrepare';
-import {
-  uploadAudioToAzure,
-  uploadAudioTrackJsonToAzure,
-} from '../../services/audio/audioUpload';
-import { notifyUploadComplete } from '../../services/audio/uploadComplete';
+import { uploadAnnotationMedia } from '../../services/brianBackend';
 import 'react-native-get-random-values';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -134,13 +128,9 @@ export default function ExpandedFingerprintView({
 
   const refreshTags = useCallback(async (text: string) => {
     if (!text.trim()) {
-      return;
+      setSelectedTags([]);
+      setSuggestedTags([]);
     }
-    try {
-      const res = await fetchSuggestedDescriptors(text);
-      setSelectedTags(res.suggestedDescriptors.slice(0, 6));
-      setSuggestedTags(res.suggestedDescriptors.slice(6));
-    } catch {}
   }, []);
 
   const handleDescriptionChange = useCallback(
@@ -198,36 +188,12 @@ export default function ExpandedFingerprintView({
     try {
       const recordingId = uuidv4();
       const startedAtMs = Date.now();
-      const prep = await uploadsPrepare(recordingId, 'm4a');
-      const minimalBundle = {
-        schema: 'audio_gps_track_v1' as const,
-        recording_started_at_ms: startedAtMs,
-        metrics: { minMeters: 3, maxGapMs: 1000 },
-        points: [],
-        audio: {
-          container: prep.audioUpload.container,
-          blobName: prep.audioUpload.blobName,
-        },
-      };
-      await Promise.all([
-        uploadAudioToAzure(
-          localUri,
-          prep.audioUpload.uploadUrl,
-          prep.audioUpload.container,
-          prep.audioUpload.blobName,
-        ),
-        uploadAudioTrackJsonToAzure(
-          minimalBundle,
-          prep.bundleUpload.uploadUrl,
-          prep.bundleUpload.container,
-          prep.bundleUpload.blobName,
-          {
-            container: prep.audioUpload.container,
-            blobName: prep.audioUpload.blobName,
-          },
-        ),
-      ]);
-      await notifyUploadComplete(recordingId, 'm4a', 'en-US');
+      await uploadAnnotationMedia(
+        recordingId,
+        localUri,
+        'audio/mp4',
+        `${recordingId}.m4a`,
+      );
 
       // Persist so the global poller can finish transcription if the user navigates away
       await insertCapture({
@@ -235,7 +201,7 @@ export default function ExpandedFingerprintView({
         sensorRecordId: sensorRecordId ?? null,
         type: 'audio',
         localPath: localUri,
-        bundleBlobName: prep.bundleUpload.blobName,
+        bundleBlobName: null,
         imageBlobName: null,
         imageContainer: null,
         status: 'transcribed',

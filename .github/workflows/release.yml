@@ -37,18 +37,10 @@ jobs:
 
       - name: Create React Native environment
         env:
-          INFLUX_URL: ${{ secrets.INFLUX_URL }}
-          INFLUX_TOKEN: ${{ secrets.INFLUX_TOKEN }}
-          INFLUX_ORG: ${{ secrets.INFLUX_ORG }}
-          INFLUX_TIMESERIES_BUCKET: ${{ secrets.INFLUX_TIMESERIES_BUCKET }}
-          INFLUX_FINGERPRINTS_BUCKET: ${{ secrets.INFLUX_FINGERPRINTS_BUCKET }}
+          BRIAN_BACKEND_URL: ${{ vars.BRIAN_BACKEND_URL }}
         run: |
-          printf 'INFLUX_URL=%s\nINFLUX_TOKEN=%s\nINFLUX_ORG=%s\nINFLUX_TIMESERIES_BUCKET=%s\nINFLUX_FINGERPRINTS_BUCKET=%s\n' \
-            "$INFLUX_URL" \
-            "$INFLUX_TOKEN" \
-            "$INFLUX_ORG" \
-            "$INFLUX_TIMESERIES_BUCKET" \
-            "$INFLUX_FINGERPRINTS_BUCKET" \
+          printf 'BRIAN_BACKEND_URL=%s\n' \
+            "$BRIAN_BACKEND_URL" \
             > .env
 
       - name: Set up Java

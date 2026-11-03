@@ -1,5 +1,6 @@
-import Config from 'react-native-config';
 import ReactNativeBlobUtil from 'react-native-blob-util';
+import Config from 'react-native-config';
+import { backendFetch } from './backendClient';
 
 export type BrianMedia = {
   role: 'image' | 'audio' | 'bundle';
@@ -9,21 +10,19 @@ export type BrianMedia = {
   byteSize?: number | null;
 };
 
-function getConfig() {
-  const baseUrl = Config.BRIAN_BACKEND_URL?.replace(/\/$/, '');
-  const token = Config.BRIAN_BACKEND_TOKEN;
-  if (!baseUrl || !token) {
-    throw new Error('Missing BRIAN_BACKEND_URL or BRIAN_BACKEND_TOKEN');
+function baseUrl(): string {
+  const value = Config.BRIAN_BACKEND_URL?.replace(/\/$/, '');
+  if (!value) {
+    throw new Error('Missing BRIAN_BACKEND_URL');
   }
-  return { baseUrl, token };
+  return value;
 }
 
-export function brianBackendHeaders(): Record<string, string> {
-  const { token } = getConfig();
-  return {
-    Authorization: `Bearer ${token}`,
-  };
+export function brianBackendUrl(path: string): string {
+  return `${baseUrl()}${path}`;
 }
+
+export const brianBackendFetch = backendFetch;
 
 function multipartUri(uri: string): string {
   if (uri.startsWith('file://') || uri.startsWith('content://')) {
@@ -38,7 +37,6 @@ export async function uploadAnnotationMedia(
   contentType: string,
   fileName: string,
 ): Promise<BrianMedia> {
-  const { baseUrl, token } = getConfig();
   const uri = multipartUri(localUri);
   const filesystemPath = uri.startsWith('file://')
     ? uri.slice('file://'.length)
@@ -54,15 +52,9 @@ export async function uploadAnnotationMedia(
     type: contentType,
   } as unknown as Blob);
 
-  const response = await fetch(
-    `${baseUrl}/api/annotations/${encodeURIComponent(annotationId)}/media`,
-    {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-      body: form,
-    },
+  const response = await backendFetch(
+    `/api/annotations/${encodeURIComponent(annotationId)}/media`,
+    { method: 'POST', body: form },
   );
   if (!response.ok) {
     const text = await response.text();
@@ -75,16 +67,9 @@ export async function uploadAnnotationMedia(
   };
 }
 
-export function brianBackendUrl(path: string): string {
-  return `${getConfig().baseUrl}${path}`;
-}
-
 export function brianBackendMediaSource(url: string): {
   uri: string;
   headers: Record<string, string>;
 } {
-  return {
-    uri: url,
-    headers: brianBackendHeaders(),
-  };
+  return { uri: url, headers: {} };
 }

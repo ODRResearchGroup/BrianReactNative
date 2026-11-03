@@ -1,24 +1,8 @@
-import Config from 'react-native-config';
 import { SensorRecord } from './db';
-
-function getConfig() {
-  const baseUrl = Config.AZURE_FUNCTION_BASE_URL;
-  const functionKey = Config.AZURE_SAVE_SENSOR_RECORD_KEY;
-  if (!baseUrl || !functionKey) {
-    throw new Error(
-      'Missing AZURE_FUNCTION_BASE_URL or AZURE_SAVE_SENSOR_RECORD_KEY',
-    );
-  }
-  return { baseUrl, functionKey };
-}
+import { backendFetch } from '../backendClient';
 
 export async function uploadSensorRecord(record: SensorRecord): Promise<void> {
-  const { baseUrl, functionKey } = getConfig();
-  const url = `${baseUrl}/api/save-sensor-record?code=${encodeURIComponent(
-    functionKey,
-  )}`;
-
-  const res = await fetch(url, {
+  const res = await backendFetch('/api/mobile/sensor-record', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({

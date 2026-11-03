@@ -23,7 +23,6 @@ import EditAnnotationTagsScreen from './components/EditAnnotationTags/EditAnnota
 import PhotoAnnotationScreen from './components/PhotoAnnotation/PhotoAnnotationScreen';
 import ShootPicScreen from './components/ShootPic/ShootPicScreen';
 import SmellWalkScreen from './components/SmellWalk/SmellWalkScreen';
-import { runAudioProcessingPoller } from './services/audio/audioProcessingPoller';
 import { InfluxDBProvider } from './services/influx/InfluxDBService';
 import { runSyncWorker } from './services/sync/syncWorker';
 import { checkAndPromptForAppUpdate } from './services/updates/appUpdater';
@@ -96,23 +95,19 @@ function DataStack() {
 export default function App() {
   useEffect(() => {
     runSyncWorker().catch(() => {});
-    runAudioProcessingPoller().catch(() => {});
     checkAndPromptForAppUpdate();
     const interval = setInterval(() => {
       runSyncWorker().catch(() => {});
-      runAudioProcessingPoller().catch(() => {});
     }, 15_000);
     const sub = AppState.addEventListener('change', state => {
       if (state === 'active') {
         runSyncWorker().catch(() => {});
-        runAudioProcessingPoller().catch(() => {});
         checkAndPromptForAppUpdate();
       }
     });
     const connectivitySub = NetInfo.addEventListener(state => {
       if (state.isConnected && state.isInternetReachable !== false) {
         runSyncWorker().catch(() => {});
-        runAudioProcessingPoller().catch(() => {});
       }
     });
     return () => {

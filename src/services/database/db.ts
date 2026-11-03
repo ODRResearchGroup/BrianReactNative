@@ -88,7 +88,7 @@ export type AnnotationRow = {
   selectedTagsJson: string | null;
   savedAt: number;
   syncStatus: 'pending' | 'synced' | 'failed';
-  azureBlobName: string | null;
+  mediaBlobName: string | null;
 };
 
 export type SyncQueueRow = {
@@ -308,7 +308,7 @@ async function getDb(): Promise<SQLite.SQLiteDatabase> {
         selected_tags_json TEXT,
         saved_at         INTEGER NOT NULL,
         sync_status      TEXT NOT NULL DEFAULT 'pending',
-        azure_blob_name  TEXT
+        media_blob_name  TEXT
       );
     `);
 
@@ -342,6 +342,11 @@ async function getDb(): Promise<SQLite.SQLiteDatabase> {
     } catch {}
     try {
       await db.executeSql('ALTER TABLE annotations ADD COLUMN walk_id TEXT;');
+    } catch {}
+    try {
+      await db.executeSql(
+        'ALTER TABLE annotations ADD COLUMN media_blob_name TEXT;',
+      );
     } catch {}
     try {
       await db.executeSql('ALTER TABLE sensor_records ADD COLUMN co REAL;');
@@ -954,7 +959,7 @@ export async function upsertAnnotation(
   await db.executeSql(
     `INSERT OR REPLACE INTO annotations (
       id, capture_id, sensor_record_id, walk_id, strokes_json,
-      selected_tags_json, saved_at, sync_status, azure_blob_name
+      selected_tags_json, saved_at, sync_status, media_blob_name
     ) VALUES (
       ?, ?, ?,
       COALESCE(
@@ -974,7 +979,7 @@ export async function upsertAnnotation(
       row.strokesJson ?? null,
       row.selectedTagsJson ?? null,
       row.savedAt,
-      row.azureBlobName ?? null,
+      row.mediaBlobName ?? null,
     ],
   );
 }
@@ -1031,7 +1036,7 @@ function mapAnnotation(r: any): AnnotationRow {
     selectedTagsJson: r.selected_tags_json ?? null,
     savedAt: r.saved_at,
     syncStatus: r.sync_status,
-    azureBlobName: r.azure_blob_name ?? null,
+    mediaBlobName: r.media_blob_name ?? null,
   };
 }
 

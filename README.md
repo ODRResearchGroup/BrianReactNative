@@ -58,6 +58,10 @@ Configure these GitHub Actions secrets before the first release:
 - `KEY_ALIAS`: release key alias
 - `KEY_PASSWORD`: release key password
 
+The mobile APK contains only `BRIAN_BACKEND_URL`. InfluxDB credentials belong
+on BrianBackend, never in the React Native `.env` file. The app obtains a
+short-lived backend session at runtime.
+
 The same keystore must be used for every release or Android will reject the APK
 as an update to an already-installed app.
 

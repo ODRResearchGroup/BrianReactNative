@@ -22,7 +22,6 @@ import {
   upsertWalk,
 } from '../database/db';
 
-import { INFLUX_CONFIG } from './config';
 import { InfluxClient } from './client';
 import { InfluxPoint } from './types';
 import {
@@ -86,7 +85,7 @@ let influxClient: InfluxClient | null = null;
 
 function getInfluxClient(): InfluxClient {
   if (!influxClient) {
-    influxClient = new InfluxClient(INFLUX_CONFIG);
+    influxClient = new InfluxClient();
   }
 
   return influxClient;

@@ -1,9 +1,5 @@
 import { enqueueSync } from '../database/db';
-import {
-  brianBackendHeaders,
-  brianBackendUrl,
-  BrianMedia,
-} from '../brianBackend';
+import { brianBackendFetch, BrianMedia } from '../brianBackend';
 import 'react-native-get-random-values';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -77,9 +73,9 @@ export async function saveAnnotationRemote(
       payload.media?.find(item => item.role === 'audio')?.url ??
       null,
   };
-  const res = await fetch(brianBackendUrl('/api/annotations'), {
+  const res = await brianBackendFetch('/api/annotations', {
     method: 'POST',
-    headers: { ...brianBackendHeaders(), 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(backendPayload),
   });
   if (!res.ok) {
@@ -145,9 +141,8 @@ export async function saveAnnotation(
 export async function loadAnnotation(
   annotationId: string,
 ): Promise<AnnotationRecord | null> {
-  const res = await fetch(
-    brianBackendUrl(`/api/annotations/${encodeURIComponent(annotationId)}`),
-    { headers: brianBackendHeaders() },
+  const res = await brianBackendFetch(
+    `/api/annotations/${encodeURIComponent(annotationId)}`,
   );
   if (res.status === 404) {
     return null;
@@ -161,9 +156,7 @@ export async function loadAnnotation(
 }
 
 export async function listAnnotations(): Promise<AnnotationRecord[]> {
-  const res = await fetch(brianBackendUrl('/api/annotations'), {
-    headers: brianBackendHeaders(),
-  });
+  const res = await brianBackendFetch('/api/annotations');
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`Brian annotation list failed: ${res.status} ${text}`);

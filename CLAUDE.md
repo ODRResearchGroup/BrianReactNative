@@ -58,9 +58,9 @@ src/
   services/
     influx/InfluxDBService    InfluxDBProvider: GPS watch, walk state, 5 s walk flush to SQLite
     database/db.ts            SQLite (smellwalk.db): sensor_records, captures, annotations, sync_queue
-    sync/syncWorker.ts        uploads queued items to Azure Functions
+    sync/syncWorker.ts        uploads queued items to BrianBackend
     sync/exportService.ts     zip export and per-walk CSV export
-    audio/, photos/, annotations/   Azure upload/transcription/descriptor services
+    audio/, photos/, annotations/   Backend media and annotation services
     updates/appUpdater.ts     Android-only self-update from GitHub Releases
 ```
 
@@ -119,11 +119,13 @@ Don't change these without a coordinated firmware change.
 ## Configuration and secrets
 
 `react-native-config` reads `.env` (never commit it; `.env.example` is the template).
+The only mobile configuration is `BRIAN_BACKEND_URL`.
 
-- Influx: `INFLUX_URL`, `INFLUX_TOKEN`, `INFLUX_DATABASE` (a fingerprint database variable is planned, see #25/#27).
-- Azure Functions (annotations, audio transcription, photos, sensor record upload): `AZURE_FUNCTION_BASE_URL`, `AZURE_FUNCTION_KEY`, `AZURE_UPLOADS_PREPARE_KEY`, `AZURE_UPLOAD_COMPLETE_KEY`, `AZURE_PROCESSED_STATUS_KEY`, `AZURE_PROCESSED_TRANSCRIPT_KEY`, `AZURE_SAVE_ANNOTATION_KEY`, `AZURE_SAVE_SENSOR_RECORD_KEY`, `AZURE_SUGGEST_DESCRIPTORS_KEY`, `AZURE_GET_PHOTO_URL_KEY`, `AZURE_PHOTO_UPLOAD_COMPLETE_KEY`, `AZURE_STT_LOCALE`. These are **not yet in `.env.example`** (see #16).
-- Values in `.env` are bundled into the APK and can be extracted: only use write-scoped tokens, and never log them.
-- When adding a variable: update `.env.example`, `src/config.ts` (if used there), and the `.env` step in `.github/workflows/release.yml` plus the matching GitHub Actions secret.
+InfluxDB credentials belong exclusively in BrianBackend.
+The app obtains a short-lived backend session at runtime and proxies all
+privileged writes through BrianBackend. Never add a
+cloud provider key or long-lived bearer token to the mobile `.env`; values in
+`.env` are bundled into the APK and can be extracted.
 
 ## Releases
 
@@ -133,7 +135,7 @@ Merging to `main` runs `.github/workflows/release.yml`: builds a signed Android 
 
 - **InfluxDB** (hosted free tier for now, self-hosted later; keep the URL configurable): one combined point every 5 s during walks (GPS + all sensor channels) in the timeseries database; one point per fingerprint (GPS + readings + annotation text + media IDs) in a fingerprints database.
 - **SQLite on the phone** is the local source of truth; remote uploads should be queued and retried, never the only copy.
-- **Azure Functions/Blob storage** for annotations, audio and photos (via `sync_queue` and `syncWorker`).
+- **BrianBackend/R2** for annotations, audio and photos (via `sync_queue` and `syncWorker`).
 
 ## Other agent files
 
