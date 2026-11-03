@@ -29,16 +29,10 @@ import {
 import RNFS from 'react-native-fs';
 import { Buffer } from 'buffer';
 
-import { photosPrepare } from '../../services/photos/photosPrepare';
-import {
-  uploadPhotoToAzure,
-  uploadPhotoBundleJsonToAzure,
-} from '../../services/photos/photoUpload';
-import { notifyPhotoUploadComplete } from '../../services/photos/photoUploadComplete';
+import { uploadAnnotationMedia } from '../../services/brianBackend';
 import { insertCapture, enqueueSync } from '../../services/database/db';
 import { saveAnnotation } from '../../services/annotations/annotationService';
 import { usePressAnimation } from '../../hooks/usePressAnimation';
-import type { PhotoBundle } from '../../services/photos/photoTypes';
 
 const C = {
   black: '#1A1A1A',
@@ -434,52 +428,27 @@ export default function PhotoAnnotationScreen({ navigation, route }: Props) {
 
       // Try upload — on failure, save locally and queue for retry
       let uploadedOk = false;
+      let uploadedMedia:
+        | Awaited<ReturnType<typeof uploadAnnotationMedia>>
+        | undefined;
       try {
-        setSaveStatus('Preparing upload…');
-        const prep = await photosPrepare(captureId, 'png');
-        const bundle: PhotoBundle = {
-          schema: 'photo_gps_bundle_v1',
-          captured_at_ms: capturedAtMs,
-          photo: {
-            container: prep.imageUpload.container,
-            blobName: prep.imageUpload.blobName,
-            contentType: 'image/png',
-          },
-          point: gpsPoint,
-        };
-
         setSaveStatus('Uploading photo…');
-        await Promise.all([
-          uploadPhotoToAzure(
-            uploadUri,
-            prep.imageUpload.uploadUrl,
-            prep.imageUpload.container,
-            prep.imageUpload.blobName,
-          ),
-          uploadPhotoBundleJsonToAzure(
-            bundle,
-            prep.bundleUpload.uploadUrl,
-            prep.bundleUpload.container,
-            prep.bundleUpload.blobName,
-          ),
-        ]);
-
-        setSaveStatus('Verifying upload…');
-        await notifyPhotoUploadComplete(
+        uploadedMedia = await uploadAnnotationMedia(
           captureId,
-          prep.imageUpload.blobName,
-          prep.bundleUpload.blobName,
+          uploadUri,
+          'image/png',
+          `${captureId}.png`,
         );
         await insertCapture({
           ...baseCapture,
-          bundleBlobName: prep.bundleUpload.blobName,
-          imageBlobName: prep.imageUpload.blobName,
-          imageContainer: prep.imageUpload.container,
+          bundleBlobName: null,
+          imageBlobName: uploadedMedia.key,
+          imageContainer: null,
           status: 'uploaded',
         });
 
         setSaveStatus('Saving annotation…');
-        await saveAnnotation({
+        const annotationResult = await saveAnnotation({
           recordingId: captureId,
           sensorRecordId: sensorRecordId ?? undefined,
           type: 'photo',
@@ -495,11 +464,12 @@ export default function PhotoAnnotationScreen({ navigation, route }: Props) {
           capturedAtMs,
           photoUri: uploadUri,
           annotationIndex,
-          imageBlobName: prep.imageUpload.blobName,
-          imageContainer: prep.imageUpload.container,
-          bundleBlobName: prep.bundleUpload.blobName,
-          bundleContainer: prep.bundleUpload.container,
+          imageBlobName: uploadedMedia.key,
+          media: [uploadedMedia],
         });
+        if (annotationResult.queued) {
+          setSaveStatus('Saved on device — waiting to sync');
+        }
         uploadedOk = true;
       } catch {
         // Copy composited image from temp to permanent storage so it survives
@@ -548,6 +518,10 @@ export default function PhotoAnnotationScreen({ navigation, route }: Props) {
             annotationIndex,
           }),
         }).catch(() => {});
+        Alert.alert(
+          'Saved on device',
+          'The backend was unavailable. This fingerprint will sync when the connection is restored.',
+        );
       }
 
       if (uploadedOk) {

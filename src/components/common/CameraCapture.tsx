@@ -1,24 +1,160 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  Image,
+  ActivityIndicator,
+  SafeAreaView,
+  Alert,
+  useWindowDimensions,
+} from 'react-native';
 import {
   Camera,
   useCameraDevice,
+  useCameraFormat,
   useCameraPermission,
 } from 'react-native-vision-camera';
+import ImageEditor from '@react-native-community/image-editor';
+import { unlink } from 'react-native-fs';
+import Svg, { Path, Line, Circle } from 'react-native-svg';
 
 interface CameraCaptureProps {
   onClose: () => void;
   onPhotoTaken: (photoPath: string) => void;
 }
 
+type FlashMode = 'auto' | 'on' | 'off';
+type CameraPosition = 'back' | 'front';
+
+const OUTPUT_SIZE = 1024;
+const JPEG_QUALITY = 0.9;
+
+const FLASH_CYCLE: Record<FlashMode, FlashMode> = {
+  auto: 'on',
+  on: 'off',
+  off: 'auto',
+};
+
+const FLASH_LABEL: Record<FlashMode, string> = {
+  auto: 'Auto',
+  on: 'On',
+  off: 'Off',
+};
+
+const COLORS = {
+  bg: '#101210',
+  surface: 'rgba(255,255,255,0.14)',
+  white: '#ffffff',
+  muted: 'rgba(255,255,255,0.78)',
+  green: '#2a7a53',
+  hintBg: 'rgba(16,18,16,0.62)',
+};
+
+const stripScheme = (p: string) => p.replace(/^file:\/\//, '');
+
+const getImageSize = (uri: string) =>
+  new Promise<{ width: number; height: number }>((resolve, reject) => {
+    Image.getSize(uri, (width, height) => resolve({ width, height }), reject);
+  });
+
+const removeFile = async (path: string | null | undefined) => {
+  if (!path) {
+    return;
+  }
+  try {
+    await unlink(stripScheme(path));
+  } catch {
+    // Already gone, nothing to clean up.
+  }
+};
+
+type IconProps = { size?: number; color?: string; strokeWidth?: number };
+
+const Icon = ({
+  size = 22,
+  color = COLORS.white,
+  strokeWidth = 2,
+  children,
+}: IconProps & { children: React.ReactNode }) => (
+  <Svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke={color}
+    strokeWidth={strokeWidth}
+    strokeLinecap="round"
+    strokeLinejoin="round">
+    {children}
+  </Svg>
+);
+
+const CloseIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <Path d="M18 6 6 18" />
+    <Path d="m6 6 12 12" />
+  </Icon>
+);
+
+const FlashIcon = ({ off, ...p }: IconProps & { off?: boolean }) => (
+  <Icon {...p}>
+    <Path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z" />
+    {off && <Line x1="3" y1="3" x2="21" y2="21" />}
+  </Icon>
+);
+
+const FlipIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <Path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
+    <Path d="M21 3v5h-5" />
+    <Path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
+    <Path d="M8 16H3v5" />
+  </Icon>
+);
+
+const CheckIcon = (p: IconProps) => (
+  <Icon strokeWidth={2.6} {...p}>
+    <Path d="M20 6 9 17l-5-5" />
+  </Icon>
+);
+
+const CameraGlyph = (p: IconProps) => (
+  <Icon {...p}>
+    <Path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z" />
+    <Circle cx="12" cy="13" r="3" />
+  </Icon>
+);
+
 export default function CameraCapture({
   onClose,
   onPhotoTaken,
 }: CameraCaptureProps) {
+  const { width } = useWindowDimensions();
+  const previewSize = width - 24;
+
   const cameraRef = useRef<Camera>(null);
-  const device = useCameraDevice('back');
+
+  const [position, setPosition] = useState<CameraPosition>('back');
+  const [flash, setFlash] = useState<FlashMode>('auto');
+
+  const device = useCameraDevice(position);
+  const hasOtherCamera = useCameraDevice(
+    position === 'back' ? 'front' : 'back',
+  );
+
+  const format = useCameraFormat(device, [
+    { photoAspectRatio: 4 / 3 },
+    { photoResolution: { width: 2048, height: 1536 } },
+  ]);
+
   const { hasPermission, requestPermission } = useCameraPermission();
+
   const [isCapturing, setIsCapturing] = useState(false);
+  const [reviewPath, setReviewPath] = useState<string | null>(null);
+
+  const pendingPathRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!hasPermission) {
@@ -26,153 +162,496 @@ export default function CameraCapture({
     }
   }, [hasPermission, requestPermission]);
 
-  const takePhoto = async () => {
-    if (isCapturing || !cameraRef.current) {
+  useEffect(
+    () => () => {
+      removeFile(pendingPathRef.current);
+    },
+    [],
+  );
+
+  const takePhoto = useCallback(async () => {
+    if (isCapturing || !cameraRef.current || !device) {
       return;
     }
+
+    setIsCapturing(true);
+
+    let originalPath: string | null = null;
+
     try {
-      setIsCapturing(true);
       const photo = await cameraRef.current.takePhoto({
-        flash: 'auto',
+        flash: device.hasFlash ? flash : 'off',
         enableShutterSound: true,
       });
-      onPhotoTaken(photo.path);
-      onClose();
+
+      originalPath = photo.path;
+      const sourceUri = `file://${stripScheme(photo.path)}`;
+
+      const { width: w, height: h } = await getImageSize(sourceUri);
+      const side = Math.min(w, h);
+      const out = Math.min(side, OUTPUT_SIZE);
+
+      const cropped: any = await ImageEditor.cropImage(sourceUri, {
+        offset: {
+          x: Math.round((w - side) / 2),
+          y: Math.round((h - side) / 2),
+        },
+        size: { width: side, height: side },
+        displaySize: { width: out, height: out },
+        resizeMode: 'cover',
+        format: 'jpeg',
+        quality: JPEG_QUALITY,
+      });
+
+      const croppedUri: string =
+        typeof cropped === 'string' ? cropped : cropped.uri;
+
+      pendingPathRef.current = stripScheme(croppedUri);
+      setReviewPath(pendingPathRef.current);
     } catch (error) {
       console.error('Failed to take photo:', error);
+      Alert.alert('Could not take photo', 'Please try again.');
     } finally {
+      removeFile(originalPath);
       setIsCapturing(false);
     }
-  };
+  }, [device, flash, isCapturing]);
+
+  const retake = useCallback(async () => {
+    const path = pendingPathRef.current;
+    pendingPathRef.current = null;
+    setReviewPath(null);
+    await removeFile(path);
+  }, []);
+
+  const usePhoto = useCallback(() => {
+    const path = pendingPathRef.current;
+    if (!path) {
+      return;
+    }
+
+    pendingPathRef.current = null;
+    onPhotoTaken(path);
+    onClose();
+  }, [onClose, onPhotoTaken]);
+
+  const handleClose = useCallback(() => {
+    onClose();
+  }, [onClose]);
 
   if (!hasPermission) {
     return (
-      <View style={styles.permissionView}>
-        <Text style={styles.permissionText}>
-          Camera permission is required to take photos
-        </Text>
-        <TouchableOpacity
-          onPress={requestPermission}
-          style={styles.permissionButton}>
-          <Text style={styles.permissionButtonText}>Grant Permission</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          onPress={onClose}
-          style={[styles.permissionButton, styles.cancelButton]}>
-          <Text style={styles.permissionButtonText}>Cancel</Text>
-        </TouchableOpacity>
-      </View>
+      <SafeAreaView style={styles.root}>
+        <View style={styles.messageView}>
+          <View style={styles.messageIcon}>
+            <CameraGlyph size={28} />
+          </View>
+          <Text style={styles.messageTitle}>Camera access needed</Text>
+          <Text style={styles.messageText}>
+            Allow camera access to take a photo of the sample.
+          </Text>
+
+          <TouchableOpacity
+            onPress={requestPermission}
+            style={styles.primaryButton}
+            accessibilityRole="button">
+            <Text style={styles.primaryButtonText}>Allow camera</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            onPress={handleClose}
+            style={styles.textButton}
+            accessibilityRole="button">
+            <Text style={styles.textButtonLabel}>Not now</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
     );
   }
 
   if (!device) {
     return (
-      <View style={styles.permissionView}>
-        <Text style={styles.permissionText}>No camera device found</Text>
-        <TouchableOpacity onPress={onClose} style={styles.permissionButton}>
-          <Text style={styles.permissionButtonText}>Close</Text>
-        </TouchableOpacity>
-      </View>
+      <SafeAreaView style={styles.root}>
+        <View style={styles.messageView}>
+          <View style={styles.messageIcon}>
+            <CameraGlyph size={28} />
+          </View>
+          <Text style={styles.messageTitle}>No camera found</Text>
+          <Text style={styles.messageText}>
+            This device doesn't have a camera that can be used here.
+          </Text>
+
+          <TouchableOpacity
+            onPress={handleClose}
+            style={styles.primaryButton}
+            accessibilityRole="button">
+            <Text style={styles.primaryButtonText}>Close</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
     );
   }
 
+  const reviewing = reviewPath !== null;
+
   return (
-    <View style={styles.container}>
-      <Camera
-        ref={cameraRef}
-        photo={true}
-        device={device}
-        isActive={true}
-        style={StyleSheet.absoluteFill}
-      />
-      <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-        <Text style={styles.closeButtonText}>✕</Text>
-      </TouchableOpacity>
-      <View style={styles.controls}>
-        <TouchableOpacity
-          onPress={takePhoto}
-          style={styles.captureButton}
-          disabled={isCapturing}>
-          <View style={styles.captureButtonInner} />
-        </TouchableOpacity>
+    <SafeAreaView style={styles.root}>
+      <View style={styles.header}>
+        {reviewing ? (
+          <View style={styles.roundButtonSpacer} />
+        ) : (
+          <TouchableOpacity
+            style={styles.roundButton}
+            onPress={handleClose}
+            accessibilityRole="button"
+            accessibilityLabel="Close camera">
+            <CloseIcon />
+          </TouchableOpacity>
+        )}
+
+        <Text style={styles.headerTitle} accessibilityRole="header">
+          {reviewing ? 'Review photo' : 'Camera'}
+        </Text>
+
+        {!reviewing && device.hasFlash ? (
+          <TouchableOpacity
+            style={styles.flashButton}
+            onPress={() => setFlash(f => FLASH_CYCLE[f])}
+            accessibilityRole="button"
+            accessibilityLabel={`Flash ${FLASH_LABEL[flash]}`}>
+            <FlashIcon off={flash === 'off'} size={18} />
+            <Text style={styles.flashLabel}>{FLASH_LABEL[flash]}</Text>
+          </TouchableOpacity>
+        ) : (
+          <View style={styles.roundButtonSpacer} />
+        )}
       </View>
-    </View>
+
+      <View style={styles.stage}>
+        <View
+          style={[styles.square, { width: previewSize, height: previewSize }]}>
+          <Camera
+            ref={cameraRef}
+            photo={true}
+            device={device}
+            format={format}
+            isActive={!reviewing}
+            resizeMode="cover"
+            style={StyleSheet.absoluteFill}
+          />
+
+          {reviewing && (
+            <Image
+              source={{ uri: `file://${reviewPath}` }}
+              style={StyleSheet.absoluteFill}
+              resizeMode="cover"
+              accessibilityLabel="Captured photo"
+            />
+          )}
+
+          {isCapturing && (
+            <View style={styles.processing}>
+              <ActivityIndicator size="large" color={COLORS.white} />
+            </View>
+          )}
+        </View>
+
+        {reviewing && (
+          <Text style={styles.reviewHint}>
+            Looks good? You can replace it any time before saving.
+          </Text>
+        )}
+      </View>
+
+      {reviewing ? (
+        <View style={styles.reviewControls}>
+          <TouchableOpacity
+            style={styles.retakeButton}
+            onPress={retake}
+            accessibilityRole="button"
+            accessibilityLabel="Retake photo">
+            <FlipIcon size={18} />
+            <Text style={styles.retakeText}>Retake</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.useButton}
+            onPress={usePhoto}
+            accessibilityRole="button"
+            accessibilityLabel="Use this photo">
+            <CheckIcon size={18} />
+            <Text style={styles.useText}>Use photo</Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <View style={styles.controls}>
+          <View style={styles.controlSide} />
+
+          <TouchableOpacity
+            onPress={takePhoto}
+            disabled={isCapturing}
+            style={[styles.shutter, isCapturing && styles.shutterBusy]}
+            accessibilityRole="button"
+            accessibilityLabel="Take photo">
+            <View style={styles.shutterInner} />
+          </TouchableOpacity>
+
+          <View style={styles.controlSide}>
+            {hasOtherCamera && (
+              <TouchableOpacity
+                style={styles.roundButton}
+                onPress={() =>
+                  setPosition(p => (p === 'back' ? 'front' : 'back'))
+                }
+                disabled={isCapturing}
+                accessibilityRole="button"
+                accessibilityLabel="Switch camera">
+                <FlipIcon />
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
+      )}
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  root: {
     flex: 1,
-    backgroundColor: 'black',
+    backgroundColor: COLORS.bg,
   },
-  permissionView: {
-    flex: 1,
-    justifyContent: 'center',
+
+  header: {
+    height: 64,
+    flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#000',
-    padding: 20,
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
   },
-  permissionText: {
-    fontSize: 18,
-    marginBottom: 20,
-    color: '#fff',
-    textAlign: 'center',
-  },
-  permissionButton: {
-    backgroundColor: '#007BFF',
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 8,
-    marginVertical: 8,
-    minWidth: 200,
-    alignItems: 'center',
-  },
-  cancelButton: {
-    backgroundColor: '#666',
-  },
-  permissionButtonText: {
-    color: '#fff',
+
+  headerTitle: {
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '500',
+    color: COLORS.white,
   },
-  closeButton: {
-    position: 'absolute',
-    top: 50,
-    right: 20,
+
+  roundButton: {
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
+    backgroundColor: COLORS.surface,
     alignItems: 'center',
-    zIndex: 10,
+    justifyContent: 'center',
   },
-  closeButtonText: {
-    color: '#fff',
-    fontSize: 24,
-    fontWeight: 'bold',
+
+  roundButtonSpacer: {
+    width: 44,
+    height: 44,
   },
-  controls: {
+
+  flashButton: {
+    minWidth: 44,
+    height: 44,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    borderRadius: 22,
+    backgroundColor: COLORS.surface,
+  },
+
+  flashLabel: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: COLORS.white,
+  },
+
+  stage: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  square: {
+    borderRadius: 28,
+    overflow: 'hidden',
+    backgroundColor: '#000',
+  },
+
+  hintWrap: {
     position: 'absolute',
-    bottom: 40,
     left: 0,
     right: 0,
+    bottom: 16,
     alignItems: 'center',
   },
-  captureButton: {
+
+  hint: {
+    fontSize: 13,
+    color: COLORS.white,
+    backgroundColor: COLORS.hintBg,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 999,
+    overflow: 'hidden',
+  },
+
+  processing: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(16,18,16,0.45)',
+  },
+
+  reviewHint: {
+    marginTop: 16,
+    paddingHorizontal: 16,
+    textAlign: 'center',
+    fontSize: 14,
+    color: COLORS.muted,
+  },
+
+  controls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 36,
+    paddingTop: 12,
+    paddingBottom: 32,
+  },
+
+  controlSide: {
+    width: 52,
+    height: 52,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  shutter: {
     width: 80,
     height: 80,
     borderRadius: 40,
-    backgroundColor: 'rgba(255, 255, 255, 0.3)',
-    justifyContent: 'center',
-    alignItems: 'center',
     borderWidth: 4,
-    borderColor: '#fff',
+    borderColor: COLORS.white,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  captureButtonInner: {
+
+  shutterBusy: {
+    opacity: 0.5,
+  },
+
+  shutterInner: {
+    width: 62,
+    height: 62,
+    borderRadius: 31,
+    backgroundColor: COLORS.white,
+  },
+
+  reviewControls: {
+    flexDirection: 'row',
+    gap: 12,
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 28,
+  },
+
+  retakeButton: {
+    flex: 1,
+    height: 54,
+    borderRadius: 999,
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,255,255,0.5)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+
+  retakeText: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: COLORS.white,
+  },
+
+  useButton: {
+    flex: 1,
+    height: 54,
+    borderRadius: 999,
+    backgroundColor: COLORS.green,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+
+  useText: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: COLORS.white,
+  },
+
+  messageView: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 32,
+  },
+
+  messageIcon: {
     width: 64,
     height: 64,
     borderRadius: 32,
-    backgroundColor: '#fff',
+    backgroundColor: COLORS.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 20,
+  },
+
+  messageTitle: {
+    fontSize: 20,
+    fontWeight: '500',
+    color: COLORS.white,
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+
+  messageText: {
+    fontSize: 15,
+    lineHeight: 22,
+    color: COLORS.muted,
+    textAlign: 'center',
+    marginBottom: 28,
+  },
+
+  primaryButton: {
+    minWidth: 220,
+    height: 54,
+    borderRadius: 999,
+    backgroundColor: COLORS.green,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  primaryButtonText: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: COLORS.white,
+  },
+
+  textButton: {
+    minHeight: 48,
+    marginTop: 8,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  textButtonLabel: {
+    fontSize: 15,
+    fontWeight: '500',
+    color: COLORS.muted,
   },
 });

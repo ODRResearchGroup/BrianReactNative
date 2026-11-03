@@ -11,19 +11,7 @@ import {
   saveAnnotation,
   SaveAnnotationPayload,
 } from '../annotations/annotationService';
-import { uploadsPrepare } from '../audio/uploadsPrepare';
-import {
-  uploadAudioToAzure,
-  uploadAudioTrackJsonToAzure,
-} from '../audio/audioUpload';
-import { notifyUploadComplete } from '../audio/uploadComplete';
-import { photosPrepare } from '../photos/photosPrepare';
-import {
-  uploadPhotoToAzure,
-  uploadPhotoBundleJsonToAzure,
-} from '../photos/photoUpload';
-import { notifyPhotoUploadComplete } from '../photos/photoUploadComplete';
-import type { PhotoBundle } from '../photos/photoTypes';
+import { uploadAnnotationMedia } from '../brianBackend';
 
 let running = false;
 
@@ -52,71 +40,59 @@ export async function runSyncWorker(): Promise<void> {
             const payload = JSON.parse(
               item.payloadJson,
             ) as SaveAnnotationPayload;
-            await saveAnnotationRemote(payload);
+            const localMedia = payload.localMedia ?? [];
+            const uploadedMedia = await Promise.all(
+              localMedia.map(media =>
+                uploadAnnotationMedia(
+                  payload.recordingId,
+                  media.localUri,
+                  media.contentType,
+                  media.fileName,
+                ),
+              ),
+            );
+            const remotePayload = { ...payload };
+            delete remotePayload.localMedia;
+            await saveAnnotationRemote({
+              ...remotePayload,
+              media: [...(payload.media ?? []), ...uploadedMedia],
+              photo:
+                remotePayload.photo ??
+                uploadedMedia.find(media => media.role === 'image')?.url ??
+                undefined,
+              audio:
+                remotePayload.audio ??
+                uploadedMedia.find(media => media.role === 'audio')?.url ??
+                undefined,
+            });
           } else if (item.entityType === 'capture') {
             const payload = JSON.parse(item.payloadJson) as any;
 
             if (payload.type === 'audio') {
-              const prep = await uploadsPrepare(
+              const media = await uploadAnnotationMedia(
                 payload.captureId,
-                payload.audioExt ?? 'm4a',
+                payload.localPath,
+                'audio/mp4',
+                `${payload.captureId}.m4a`,
               );
-              await Promise.all([
-                uploadAudioToAzure(
-                  payload.localPath,
-                  prep.audioUpload.uploadUrl,
-                  prep.audioUpload.container,
-                  prep.audioUpload.blobName,
-                ),
-                uploadAudioTrackJsonToAzure(
-                  payload.trackBundle,
-                  prep.bundleUpload.uploadUrl,
-                  prep.bundleUpload.container,
-                  prep.bundleUpload.blobName,
-                  {
-                    container: prep.audioUpload.container,
-                    blobName: prep.audioUpload.blobName,
-                  },
-                ),
-              ]);
               await updateCaptureStatus(payload.captureId, 'uploaded');
-              await notifyUploadComplete(
-                payload.captureId,
-                payload.audioExt ?? 'm4a',
-                payload.locale ?? 'en-US',
-              );
+              await saveAnnotation({
+                recordingId: payload.captureId,
+                sensorRecordId: payload.sensorRecordId ?? undefined,
+                type: 'audio',
+                description: '',
+                timestamp: new Date(payload.capturedAt).toISOString(),
+                media: [media],
+                annotationIndex: payload.annotationIndex,
+              });
             } else if (payload.type === 'photo') {
-              const prep = await photosPrepare(payload.captureId, 'png');
-              const bundle: PhotoBundle = {
-                schema: 'photo_gps_bundle_v1',
-                captured_at_ms: payload.capturedAtMs,
-                photo: {
-                  container: prep.imageUpload.container,
-                  blobName: prep.imageUpload.blobName,
-                  contentType: 'image/png',
-                },
-                point: payload.gpsPoint ?? null,
-              };
-              await Promise.all([
-                uploadPhotoToAzure(
-                  payload.compositedUri,
-                  prep.imageUpload.uploadUrl,
-                  prep.imageUpload.container,
-                  prep.imageUpload.blobName,
-                ),
-                uploadPhotoBundleJsonToAzure(
-                  bundle,
-                  prep.bundleUpload.uploadUrl,
-                  prep.bundleUpload.container,
-                  prep.bundleUpload.blobName,
-                ),
-              ]);
-              await updateCaptureStatus(payload.captureId, 'uploaded');
-              await notifyPhotoUploadComplete(
+              const media = await uploadAnnotationMedia(
                 payload.captureId,
-                prep.imageUpload.blobName,
-                prep.bundleUpload.blobName,
+                payload.compositedUri,
+                'image/png',
+                `${payload.captureId}.png`,
               );
+              await updateCaptureStatus(payload.captureId, 'uploaded');
               await saveAnnotation({
                 recordingId: payload.captureId,
                 sensorRecordId: payload.sensorRecordId ?? undefined,
@@ -133,10 +109,7 @@ export async function runSyncWorker(): Promise<void> {
                 capturedAtMs: payload.capturedAtMs,
                 photoUri: payload.compositedUri,
                 annotationIndex: payload.annotationIndex,
-                imageBlobName: prep.imageUpload.blobName,
-                imageContainer: prep.imageUpload.container,
-                bundleBlobName: prep.bundleUpload.blobName,
-                bundleContainer: prep.bundleUpload.container,
+                media: [media],
               });
             }
           }

@@ -1,10 +1,18 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   Alert,
+  Dimensions,
   InteractionManager,
   Modal,
   Pressable,
   SafeAreaView,
+  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -26,52 +34,51 @@ import {
 } from '@react-navigation/native';
 import {
   ArrowRight,
+  ChevronDownIcon,
+  ChevronUpIcon,
   CircleStop,
   FingerprintPattern,
   Play,
   X,
 } from 'lucide-react-native';
-import { SENSOR_DEFINITIONS } from '../../sensors';
+import {
+  ENV_SENSOR_DEFINITIONS,
+  GAS_SENSOR_DEFINITIONS,
+  SENSOR_DEFINITIONS,
+} from '../../sensors';
 import {
   ensureFullLocationAccess,
   locationAccessMessage,
   openLocationSettings,
 } from '../../services/location/locationPermissions';
+import {
+  COLORS,
+  GRAPH_HEIGHT,
+  SAMPLE_MS,
+  MAX_POINTS,
+  MIN_POINTS_FOR_LEVELS,
+} from './consts';
+import WaitIcon from './components/icons/WaitIcon';
+import { ChartLine, Point, SensorAnalysis } from './types';
+import {
+  agoLabel,
+  trendArrow,
+  normalise,
+  channelColor,
+  levelWord,
+  trendOf,
+  describeError,
+  fmtWithUnit,
+  levelStyles,
+} from './utils';
+import DataRow from './components/DataRow';
+import InlineRadar from './components/InlineRadar';
+import LineGraph from './components/LineGraph';
+import RoundAction from './components/RoundAction';
+import SensorSheet from './components/SensorSheet';
+import Dot from './components/icons/Dot';
 
-type SensorValue = {
-  key: string;
-  label: string;
-  value: number | null;
-  unit: string;
-};
-
-function describeError(error: unknown): string {
-  if (error instanceof Error) {
-    return error.message;
-  }
-
-  if (typeof error === 'string') {
-    return error;
-  }
-
-  if (error && typeof error === 'object') {
-    const details = error as Record<string, unknown>;
-    const message = details.message ?? details.localizedDescription;
-    const code = details.code;
-
-    if (message || code) {
-      return [code, message].filter(Boolean).join(': ');
-    }
-
-    try {
-      return JSON.stringify(error);
-    } catch {
-      return 'Unknown error';
-    }
-  }
-
-  return String(error);
-}
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 export default function SmellWalkScreen() {
   const { characteristicValues, connectedDevice } = useBLE();
@@ -88,7 +95,15 @@ export default function SmellWalkScreen() {
   const [isConnected, setIsConnected] = useState(__DEV__);
   const [showConnectionModal, setShowConnectionModal] = useState(false);
   const [showFingerprintModal, setShowFingerprintModal] = useState(false);
+  const [showSensorSheet, setShowSensorSheet] = useState(false);
   const [didPromptResume, setDidPromptResume] = useState(false);
+
+  const [history, setHistory] = useState<Point[]>([]);
+  const [selectedKey, setSelectedKey] = useState<string>('all');
+  const [panelOpen, setPanelOpen] = useState(true);
+
+  const valuesRef = useRef(characteristicValues);
+  valuesRef.current = characteristicValues;
 
   const handleResumeWalk = useCallback(
     async (interruptedWalkId: string) => {
@@ -130,6 +145,28 @@ export default function SmellWalkScreen() {
       KeepAwake.deactivate();
     };
   }, [isSmellWalkActive]);
+
+  useEffect(() => {
+    const id = setInterval(() => {
+      const v: Record<string, number | null> = {};
+      let any = false;
+
+      SENSOR_DEFINITIONS.forEach(sensor => {
+        const raw = valuesRef.current[sensor.key];
+        const ok = typeof raw === 'number' && Number.isFinite(raw);
+        v[sensor.key] = ok ? raw : null;
+        any = any || ok;
+      });
+
+      if (!any) {
+        return;
+      }
+
+      setHistory(h => [...h.slice(-(MAX_POINTS - 1)), { t: Date.now(), v }]);
+    }, SAMPLE_MS);
+
+    return () => clearInterval(id);
+  }, []);
 
   useFocusEffect(
     useCallback(() => {
@@ -194,8 +231,8 @@ export default function SmellWalkScreen() {
           connectedDevice !== null &&
           (await connectedDevice.isConnected().catch(() => false));
         if (active) {
-          setIsConnected(__DEV__ || connected);
-          setShowConnectionModal(!__DEV__ && !connected);
+          setIsConnected(connected || __DEV__);
+          setShowConnectionModal(!connected && !__DEV__);
         }
       };
 
@@ -212,14 +249,93 @@ export default function SmellWalkScreen() {
     }, [connectedDevice]),
   );
 
-  const sensorValues = useMemo<SensorValue[]>(() => {
-    return SENSOR_DEFINITIONS.map(sensor => ({
-      key: sensor.key,
-      label: sensor.chartLabel,
-      value: characteristicValues[sensor.key] ?? null,
-      unit: sensor.unit,
-    }));
-  }, [characteristicValues]);
+  const analysis = useMemo(() => {
+    const ready = history.length >= MIN_POINTS_FOR_LEVELS;
+
+    const sensors: SensorAnalysis[] = GAS_SENSOR_DEFINITIONS.map(
+      (sensor, index) => {
+        const raw = history.map(p => p.v[sensor.key] ?? null);
+        const nums = raw.filter((v): v is number => v !== null);
+        const series = normalise(raw);
+        const level = ready ? series[series.length - 1] ?? null : null;
+        const live = characteristicValues[sensor.key];
+
+        return {
+          key: sensor.key,
+          label: sensor.chartLabel,
+          unit: sensor.unit,
+          color: channelColor(index),
+          current:
+            typeof live === 'number' && Number.isFinite(live) ? live : null,
+          peak: nums.length ? Math.max(...nums) : null,
+          avg: nums.length
+            ? nums.reduce((a, b) => a + b, 0) / nums.length
+            : null,
+          series,
+          level,
+          levelWord: level === null ? null : levelWord(level),
+          trend: trendOf(series),
+        };
+      },
+    );
+
+    const strongest = ready
+      ? [...sensors]
+          .filter(s => s.level !== null)
+          .sort((a, b) => (b.level ?? 0) - (a.level ?? 0))[0] ?? null
+      : null;
+
+    return { ready, sensors, strongest };
+  }, [characteristicValues, history]);
+
+  const envReadings = useMemo(
+    () =>
+      ENV_SENSOR_DEFINITIONS.map(sensor => {
+        const raw = characteristicValues[sensor.key];
+        return {
+          key: sensor.key,
+          label: sensor.chartLabel,
+          value: typeof raw === 'number' && Number.isFinite(raw) ? raw : null,
+          unit: sensor.unit,
+        };
+      }),
+    [characteristicValues],
+  );
+
+  const selectedSensor =
+    selectedKey === 'all'
+      ? null
+      : analysis.sensors.find(s => s.key === selectedKey) ?? null;
+
+  const chartLines: ChartLine[] = selectedSensor
+    ? [
+        {
+          key: selectedSensor.key,
+          color: selectedSensor.color,
+          values: selectedSensor.series,
+        },
+      ]
+    : analysis.sensors.map(s => ({
+        key: s.key,
+        color: s.color,
+        values: s.series,
+      }));
+
+  const windowSize = Math.max(history.length, 30);
+  const hasHistory = history.length >= 2;
+  const hasGasData = analysis.sensors.some(s => s.current !== null);
+
+  const graphSummary = selectedSensor
+    ? `Line graph of ${
+        selectedSensor.label
+      } signal level over the last ${agoLabel(
+        (windowSize - 1) * (SAMPLE_MS / 1000),
+      )}.`
+    : `Line graph comparing all gas channels over the last ${agoLabel(
+        (windowSize - 1) * (SAMPLE_MS / 1000),
+      )}.`;
+
+  /* ---------------- actions ---------------- */
 
   const handleStopWalk = async () => {
     try {
@@ -231,32 +347,38 @@ export default function SmellWalkScreen() {
 
       try {
         const savedPath = await exportSmellWalkZip(completedWalkId);
-        Alert.alert('Smell walk saved', `Walk export saved to:\n${savedPath}`);
+        Alert.alert('Walk saved', `Export saved to:\n${savedPath}`);
       } catch (exportError) {
         console.error('Smell walk export failed:', exportError);
         Alert.alert(
           'Walk stopped',
-          'The smell walk was saved, but the export could not be shared.',
+          'The walk was saved, but the export could not be shared.',
         );
       }
     } catch (error) {
       console.error('Could not stop smell walk:', error);
-      Alert.alert('Could not stop smell walk', describeError(error));
+      Alert.alert('Could not stop walk', describeError(error));
     }
   };
 
-  const requireConnectedDevice = async () => {
-    if (__DEV__) {
-      return true;
-    }
+  const confirmStopWalk = () => {
+    Alert.alert('End this walk?', 'Recording stops and the walk is saved.', [
+      { text: 'Keep walking', style: 'cancel' },
+      { text: 'End walk', style: 'destructive', onPress: handleStopWalk },
+    ]);
+  };
 
+  const requireConnectedDevice = async () => {
     const connected =
       connectedDevice !== null &&
       (await connectedDevice.isConnected().catch(() => false));
-    if (!connected) {
-      Alert.alert('e-nose not connected', 'Connect to the e-nose first.');
+    if (!connected && !__DEV__) {
+      Alert.alert(
+        'BRIAN e-Nose not connected',
+        'Connect to the BRIAN e-Nose first.',
+      );
     }
-    setIsConnected(connected);
+    setIsConnected(connected || __DEV__);
     return connected;
   };
 
@@ -288,18 +410,18 @@ export default function SmellWalkScreen() {
     try {
       await startSmellWalk();
     } catch (error) {
-      Alert.alert('Could not start smell walk', String(error));
+      Alert.alert('Could not start walk', String(error));
     }
   };
 
   const handleFingerprint = async () => {
-    if (await requireConnectedDevice()) {
+    if ((await requireConnectedDevice()) || __DEV__) {
       setShowFingerprintModal(true);
     }
   };
 
   const goToDeviceScreen = () => {
-    setShowConnectionModal(false);
+    setShowConnectionModal(false && !__DEV__);
     navigation.navigate('Device');
   };
 
@@ -307,110 +429,236 @@ export default function SmellWalkScreen() {
     <SafeAreaView style={styles.screen}>
       <View style={styles.mapPanel}>
         {mapVisible && <LiveLocationMap coordinates={location} trail={trail} />}
-        {!location && (
-          <View style={styles.mapBadge}>
-            <Text style={styles.mapBadgeText}>Waiting for GPS</Text>
-          </View>
-        )}
-      </View>
 
-      <View style={styles.content}>
-        <View style={styles.headerRow}>
-          <View>
-            <Text style={styles.title}>Smell Walk</Text>
-            <Text style={styles.status}>
-              {isSmellWalkActive
-                ? 'Recording data every 5 seconds'
-                : 'Ready to record'}
-            </Text>
-            {isSmellWalkActive && (
-              <View
-                accessibilityRole="text"
-                accessibilityLabel="Recording in progress"
-                style={styles.recordingBadge}>
-                <View style={styles.recordingDot} />
-                <Text style={styles.recordingBadgeText}>Recording</Text>
-              </View>
-            )}
-          </View>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={
-              isSmellWalkActive ? 'End smell walk' : 'Start smell walk'
+        <View style={styles.topLeft}>
+          <InlineRadar
+            sensors={analysis.sensors}
+            hasData={hasGasData}
+            onPress={() => {
+              if (!isConnected && !__DEV__) {
+                setShowConnectionModal(true);
+              } else {
+                setShowSensorSheet(true);
+              }
+            }}
+          />
+        </View>
+
+        <View style={styles.bottomRight}>
+          <RoundAction
+            tone="light"
+            muted={!isConnected}
+            label={isConnected ? 'Fingerprint' : 'Connect first'}
+            accessibilityLabel="Save fingerprint"
+            accessibilityHint={
+              isConnected
+                ? 'Captures and saves the current sensor readings'
+                : 'BRIAN e-Nose is not connected. Opens the device screen'
             }
+            onPress={isConnected ? handleFingerprint : goToDeviceScreen}
+            icon={
+              <FingerprintPattern
+                color={COLORS.green}
+                size={28}
+                strokeWidth={2}
+              />
+            }
+          />
+
+          <RoundAction
+            tone={isSmellWalkActive ? 'danger' : 'primary'}
+            muted={!isSmellWalkActive && !isConnected}
+            label={
+              isSmellWalkActive
+                ? 'End walk'
+                : isConnected
+                ? 'Start walk'
+                : 'Connect first'
+            }
+            accessibilityLabel={isSmellWalkActive ? 'End walk' : 'Start walk'}
             accessibilityHint={
               isSmellWalkActive
-                ? 'Stops recording and sends the final sample'
-                : 'Begins recording sensor data and your GPS trail'
+                ? 'Asks to confirm, then stops recording and saves the walk'
+                : isConnected
+                ? 'Begins recording sensor data and your GPS trail'
+                : 'BRIAN e-Nose is not connected. Opens the device screen'
             }
-            accessibilityState={{
-              disabled: !isSmellWalkActive && !isConnected,
-            }}
             onPress={
               isSmellWalkActive
-                ? handleStopWalk
+                ? confirmStopWalk
                 : isConnected
                 ? handleStartWalk
                 : goToDeviceScreen
             }
-            style={({ pressed }) => [
-              styles.walkButton,
-              isSmellWalkActive && styles.endButton,
-              !isSmellWalkActive && !isConnected && styles.disabledButton,
-              pressed && styles.buttonPressed,
-            ]}>
-            {isSmellWalkActive ? (
-              <CircleStop color="#fff" size={21} strokeWidth={2.5} />
-            ) : (
-              <Play color="#fff" size={21} strokeWidth={2.5} />
-            )}
-            <Text style={styles.buttonText}>
-              {isSmellWalkActive ? 'End walk' : 'Start walk'}
-            </Text>
-          </Pressable>
-        </View>
-
-        <View style={styles.sensorCard}>
-          <Text style={styles.sectionTitle}>Live sensors</Text>
-          <View style={styles.sensorGrid}>
-            {sensorValues.map(sensor => (
-              <View
-                key={sensor.key}
-                accessible
-                accessibilityLabel={`${sensor.label}: ${
-                  sensor.value == null ? 'not available' : sensor.value
-                } ${sensor.unit}`}
-                style={styles.sensorCell}>
-                <Text style={styles.sensorLabel} numberOfLines={1}>
-                  {sensor.label}
-                </Text>
-                <Text style={styles.sensorValue}>
-                  {sensor.value == null ? '—' : sensor.value.toFixed(2)}{' '}
-                  {sensor.unit}
-                </Text>
-              </View>
-            ))}
-          </View>
-        </View>
-
-        <View style={styles.actions}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Create fingerprint"
-            accessibilityHint="Opens the fingerprint annotation form"
-            accessibilityState={{ disabled: !isConnected }}
-            style={({ pressed }) => [
-              styles.actionButton,
-              styles.annotationButton,
-              !isConnected && styles.disabledButton,
-              pressed && styles.buttonPressed,
-            ]}
-            onPress={isConnected ? handleFingerprint : goToDeviceScreen}>
-            <FingerprintPattern color="#fff" size={20} strokeWidth={2.25} />
-            <Text style={styles.buttonText}>Fingerprint</Text>
-          </Pressable>
+            icon={
+              isSmellWalkActive ? (
+                <CircleStop color="#fff" size={30} strokeWidth={2.25} />
+              ) : (
+                <Play color="#fff" size={28} strokeWidth={2.25} />
+              )
+            }
+          />
         </View>
       </View>
+
+      <View style={styles.panel}>
+        <View style={styles.panelHandle} />
+
+        <Pressable
+          onPress={() => setPanelOpen(o => !o)}
+          style={styles.panelHeader}
+          accessibilityRole="button"
+          accessibilityLabel={panelOpen ? 'Collapse panel' : 'Expand panel'}>
+          <View style={styles.panelHeaderText}>
+            <Text style={styles.panelTitle} accessibilityRole="header">
+              Sensor readings over time
+            </Text>
+          </View>
+          {panelOpen ? (
+            <ChevronDownIcon color={COLORS.muted} />
+          ) : (
+            <ChevronUpIcon color={COLORS.muted} />
+          )}
+        </Pressable>
+
+        {panelOpen && (
+          <ScrollView
+            style={styles.panelBody}
+            contentContainerStyle={styles.panelBodyContent}
+            showsVerticalScrollIndicator={false}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.chips}>
+              {[
+                { key: 'all', label: 'All channels', color: null },
+                ...analysis.sensors.map(s => ({
+                  key: s.key,
+                  label: s.label,
+                  color: s.color,
+                })),
+              ].map(c => {
+                const active = c.key === selectedKey;
+                return (
+                  <Pressable
+                    key={c.key}
+                    onPress={() => setSelectedKey(c.key)}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: active }}
+                    accessibilityLabel={`Show ${c.label}`}
+                    style={[styles.chip, active && styles.chipActive]}>
+                    {c.color ? <Dot color={c.color} size={8} /> : null}
+                    <Text
+                      style={[
+                        styles.chipText,
+                        active && styles.chipTextActive,
+                      ]}>
+                      {c.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+
+            {hasHistory ? (
+              <LineGraph
+                lines={chartLines}
+                windowSize={windowSize}
+                filled={!!selectedSensor}
+                summary={graphSummary}
+              />
+            ) : (
+              <View style={styles.graphEmpty}>
+                <WaitIcon size={22} color={COLORS.muted} />
+                <Text style={styles.bodyMuted}>
+                  {isConnected
+                    ? 'Graph starts after a few readings.'
+                    : 'Connect BRIAN e-Nose to see live readings.'}
+                </Text>
+              </View>
+            )}
+
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle} accessibilityRole="header">
+                {selectedSensor ? 'Readings' : 'Gas channels'}
+              </Text>
+              <View>
+                {selectedSensor ? (
+                  <>
+                    <DataRow
+                      first
+                      label="Now"
+                      value={fmtWithUnit(
+                        selectedSensor.current,
+                        selectedSensor.unit,
+                      )}
+                    />
+                    <DataRow
+                      label="Peak"
+                      value={fmtWithUnit(
+                        selectedSensor.peak,
+                        selectedSensor.unit,
+                      )}
+                    />
+                    <DataRow
+                      label="Average"
+                      value={fmtWithUnit(
+                        selectedSensor.avg,
+                        selectedSensor.unit,
+                      )}
+                    />
+                  </>
+                ) : (
+                  analysis.sensors.map((s, i) => (
+                    <DataRow
+                      key={s.key}
+                      first={i === 0}
+                      swatch={s.color}
+                      label={s.label}
+                      value={fmtWithUnit(s.current, s.unit)}
+                      extra={
+                        analysis.ready && s.levelWord ? (
+                          <Text
+                            style={[
+                              styles.dataLevel,
+                              levelStyles(s.levelWord).text,
+                            ]}>
+                            {s.levelWord} {trendArrow(s.trend)}
+                          </Text>
+                        ) : null
+                      }
+                    />
+                  ))
+                )}
+              </View>
+            </View>
+
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle} accessibilityRole="header">
+                Environment
+              </Text>
+              <View>
+                {envReadings.map((r, i) => (
+                  <DataRow
+                    key={r.key}
+                    first={i === 0}
+                    label={r.label}
+                    value={fmtWithUnit(r.value, r.unit, 1)}
+                  />
+                ))}
+              </View>
+            </View>
+          </ScrollView>
+        )}
+      </View>
+
+      <SensorSheet
+        visible={showSensorSheet}
+        onClose={() => setShowSensorSheet(false)}
+        sensors={analysis.sensors}
+        ready={analysis.ready}
+        screenWidth={SCREEN_WIDTH}
+      />
 
       <FingerprintModal
         visible={showFingerprintModal}
@@ -419,7 +667,7 @@ export default function SmellWalkScreen() {
       />
 
       <Modal
-        visible={!__DEV__ && showConnectionModal}
+        visible={showConnectionModal}
         transparent
         animationType="fade"
         onRequestClose={goToDeviceScreen}>
@@ -427,24 +675,28 @@ export default function SmellWalkScreen() {
           <View style={styles.connectionModalCard}>
             <View style={styles.connectionModalHeader}>
               <Text style={styles.connectionModalTitle}>
-                Connect your e-nose
+                Connect your e-Nose
               </Text>
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel="Close connection prompt"
-                style={styles.connectionModalClose}
-                onPress={() => setShowConnectionModal(false)}>
-                <X color="#555" size={22} strokeWidth={2.5} />
+                style={styles.iconButton}
+                onPress={() => setShowConnectionModal(false && !__DEV__)}>
+                <X color={COLORS.ink} size={22} strokeWidth={2} />
               </Pressable>
             </View>
             <Text style={styles.connectionModalText}>
-              Connect to the e-nose before starting a walk or taking a
+              Connect to the e-Nose before starting a walk or taking a
               fingerprint.
             </Text>
             <Pressable
-              style={styles.connectionModalButton}
+              accessibilityRole="button"
+              style={({ pressed }) => [
+                styles.connectionModalButton,
+                pressed && styles.pressed,
+              ]}
               onPress={goToDeviceScreen}>
-              <Text style={styles.buttonText}>Devices</Text>
+              <Text style={styles.connectionModalButtonText}>Devices</Text>
               <ArrowRight color="#fff" size={20} strokeWidth={2.5} />
             </Pressable>
           </View>
@@ -455,145 +707,195 @@ export default function SmellWalkScreen() {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#fff' },
+  screen: { flex: 1, backgroundColor: COLORS.bg },
+
+  pressed: { opacity: 0.7 },
+
+  caption: { fontSize: 13, lineHeight: 18, color: COLORS.muted },
+  bodyMuted: { fontSize: 15, lineHeight: 22, color: COLORS.muted },
+  textMuted: { color: COLORS.muted },
+
+  toneLowBg: { backgroundColor: COLORS.greenTint },
+  toneMediumBg: { backgroundColor: COLORS.amberTint },
+  toneHighBg: { backgroundColor: COLORS.redTint },
+  toneLowText: { color: COLORS.green },
+  toneMediumText: { color: COLORS.amber },
+  toneHighText: { color: COLORS.red },
+  toneLowBar: { backgroundColor: COLORS.green },
+  toneMediumBar: { backgroundColor: COLORS.amber },
+  toneHighBar: { backgroundColor: COLORS.red },
+
   mapPanel: { flex: 1, position: 'relative' },
-  mapBadge: {
+
+  topLeft: {
     position: 'absolute',
-    top: 14,
-    left: 14,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 6,
-    backgroundColor: 'rgba(255,255,255,0.9)',
+    top: 12,
+    left: 12,
   },
-  mapBadgeText: { fontSize: 12, color: '#333 ', fontWeight: '600' },
-  content: { padding: 18, paddingBottom: 28 },
-  headerRow: {
+
+  bottomRight: {
+    position: 'absolute',
+    right: 12,
+    bottom: 28,
+    gap: 12,
+  },
+
+  iconButton: {
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  panel: {
+    maxHeight: SCREEN_HEIGHT * 0.55,
+    backgroundColor: COLORS.surface,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    borderTopWidth: 1,
+    borderLeftWidth: 1,
+    borderRightWidth: 1,
+    borderColor: COLORS.border,
+    paddingTop: 8,
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: -2 },
+    elevation: 8,
+  },
+
+  panelHandle: {
+    alignSelf: 'center',
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#d6d8d2',
+  },
+
+  panelHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingTop: 14,
+    paddingBottom: 12,
+  },
+
+  panelHeaderText: { flex: 1, gap: 2 },
+
+  panelTitle: { fontSize: 18, fontWeight: '600', color: COLORS.ink },
+
+  summary: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    gap: 16,
+    minHeight: 48,
+    marginHorizontal: 20,
+    paddingBottom: 16,
   },
-  title: { fontSize: 24, fontWeight: '700', color: '#111' },
-  status: { fontSize: 13, color: '#666', marginTop: 4 },
-  recordingBadge: {
-    marginTop: 8,
-    alignSelf: 'flex-start',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: '#fef2f2',
-    borderColor: '#fecaca',
-    borderWidth: 1,
+
+  summaryText: { flex: 1, gap: 2 },
+
+  summaryName: { fontSize: 16, fontWeight: '500', color: COLORS.ink },
+
+  pill: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
     borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
   },
-  recordingDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#dc2626',
+
+  pillText: { fontSize: 14, fontWeight: '500' },
+
+  panelBody: { flexGrow: 0 },
+
+  panelBodyContent: {
+    paddingHorizontal: 20,
+    paddingBottom: 32,
+    gap: 28,
   },
-  recordingBadgeText: {
-    color: '#991b1b',
-    fontSize: 12,
-    fontWeight: '700',
+
+  chips: { gap: 8, paddingRight: 20 },
+
+  chip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    minHeight: 40,
+    paddingHorizontal: 14,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.surface,
   },
-  actions: { gap: 10, marginTop: 16 },
-  walkButton: {
-    minWidth: 135,
-    height: 48,
+
+  chipActive: { backgroundColor: COLORS.greenTint, borderColor: COLORS.green },
+
+  chipText: { fontSize: 14, color: COLORS.ink },
+
+  chipTextActive: { fontWeight: '500', color: COLORS.green },
+
+  dataLevel: { fontSize: 13 },
+
+  section: { gap: 4 },
+
+  sectionTitle: { fontSize: 16, fontWeight: '600', color: COLORS.ink },
+
+  graphEmpty: {
+    height: GRAPH_HEIGHT,
+    borderRadius: 14,
+    backgroundColor: COLORS.bg,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
     paddingHorizontal: 16,
-    flexDirection: 'row',
-    gap: 9,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#111',
-    borderRadius: 24,
   },
-  buttonPressed: { opacity: 0.65, transform: [{ scale: 0.94 }] },
-  actionButton: {
-    flexDirection: 'row',
-    gap: 9,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#111',
-    borderRadius: 8,
-    paddingVertical: 13,
-  },
-  endButton: { backgroundColor: '#b42318' },
-  annotationButton: { backgroundColor: '#2563eb' },
-  disabledButton: { opacity: 0.45 },
-  buttonText: { color: '#fff', fontSize: 15, fontWeight: '600' },
+
   connectionModalBackdrop: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     padding: 24,
-    backgroundColor: 'rgba(0,0,0,0.45)',
+    backgroundColor: 'rgba(20,22,20,0.5)',
   },
+
   connectionModalCard: {
     width: '100%',
     maxWidth: 360,
     padding: 24,
-    borderRadius: 12,
-    backgroundColor: '#fff',
+    paddingTop: 16,
+    borderRadius: 28,
+    backgroundColor: COLORS.surface,
   },
+
   connectionModalHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-  connectionModalClose: {
-    padding: 4,
+
+  connectionModalTitle: { fontSize: 18, fontWeight: '600', color: COLORS.ink },
+
+  connectionModalText: {
+    marginTop: 6,
+    color: COLORS.muted,
+    fontSize: 15,
+    lineHeight: 22,
   },
-  connectionModalTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#111',
-  },
-  connectionModalText: { marginTop: 10, color: '#555', lineHeight: 20 },
+
   connectionModalButton: {
     flexDirection: 'row',
     justifyContent: 'center',
     gap: 8,
     alignItems: 'center',
     marginTop: 20,
-    paddingVertical: 13,
-    borderRadius: 8,
-    backgroundColor: '#2563eb',
+    height: 52,
+    borderRadius: 999,
+    backgroundColor: COLORS.green,
   },
-  sectionTitle: {
-    fontSize: 17,
-    fontWeight: '700',
-    color: '#111',
-    marginTop: 22,
+
+  connectionModalButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '500',
   },
-  sensorCard: {
-    marginTop: 12,
-  },
-  envCard: {
-    marginTop: 12,
-    gap: 8,
-  },
-  envRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  envLabel: { fontSize: 13, color: '#555' },
-  envValue: { fontSize: 13, color: '#111', fontWeight: '600' },
-  slider: { width: '100%', height: 36 },
-  sensorGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 },
-  sensorCell: {
-    width: '23%',
-    minWidth: 70,
-    backgroundColor: '#f1f3f5',
-    borderRadius: 6,
-    paddingHorizontal: 4,
-    paddingVertical: 7,
-    alignItems: 'center',
-  },
-  sensorLabel: { fontSize: 11, color: '#555', fontWeight: '600' },
-  sensorValue: { fontSize: 11, color: '#111', marginTop: 2 },
-  locationText: { fontSize: 12, color: '#666', marginTop: 16 },
 });

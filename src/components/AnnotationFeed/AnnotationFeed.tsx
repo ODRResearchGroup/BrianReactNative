@@ -23,7 +23,6 @@ import {
   CaptureRow,
 } from '../../services/database/db';
 import { saveAnnotation } from '../../services/annotations/annotationService';
-import { deduplicateTranscript } from '../../services/audio/processedTranscript';
 import { usePressAnimation } from '../../hooks/usePressAnimation';
 
 const C = {
@@ -33,6 +32,17 @@ const C = {
   white: '#FAFAFA',
   border: '#E0E0E0',
 };
+
+function deduplicateTranscript(text: string): string {
+  if (!text) {
+    return text;
+  }
+  const half = Math.floor(text.length / 2);
+  if (text.slice(0, half).trim() === text.slice(half).trim()) {
+    return text.slice(0, half).trim();
+  }
+  return text;
+}
 
 type TagColor =
   | 'green'
