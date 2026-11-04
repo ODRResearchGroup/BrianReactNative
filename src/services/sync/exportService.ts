@@ -196,8 +196,7 @@ export async function exportSmellWalkCsv(walkId: string): Promise<string> {
 }
 
 export async function exportSmellWalkZip(walkId: string): Promise<string> {
-  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const stagingDir = `${EXPORT_DIR}/walk_${walkId}_${timestamp}`;
+  const stagingDir = `${EXPORT_DIR}/${walkId}`;
   const mediaDir = `${stagingDir}/media`;
   const { csvPath } = await writeSmellWalkCsvFile(walkId);
   const csvContents = await RNFS.readFile(csvPath, 'utf8');
@@ -248,14 +247,14 @@ export async function exportSmellWalkZip(walkId: string): Promise<string> {
       }),
   );
 
-  const zipPath = `${EXPORT_DIR}/smellwalk_${walkId}_${timestamp}.zip`;
+  const zipPath = `${EXPORT_DIR}/${walkId}.zip`;
   await zip(stagingDir, zipPath);
   await RNFS.unlink(stagingDir).catch(() => {});
 
   if (Platform.OS === 'android') {
     return ReactNativeBlobUtil.MediaCollection.copyToMediaStore(
       {
-        name: `smellwalk_${walkId}_${timestamp}.zip`,
+        name: `${walkId}.zip`,
         parentFolder: 'SmellWalk',
         mimeType: 'application/zip',
       },

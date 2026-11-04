@@ -92,7 +92,7 @@ export default function SmellWalkScreen() {
   } = useInfluxDB();
   const navigation = useNavigation<NavigationProp<{ Device: undefined }>>();
   const [mapVisible, setMapVisible] = useState(false);
-  const [isConnected, setIsConnected] = useState(__DEV__);
+  const [isConnected, setIsConnected] = useState(false);
   const [showConnectionModal, setShowConnectionModal] = useState(false);
   const [showFingerprintModal, setShowFingerprintModal] = useState(false);
   const [showSensorSheet, setShowSensorSheet] = useState(false);
@@ -128,12 +128,12 @@ export default function SmellWalkScreen() {
       }
 
       setDidPromptResume(true);
-      startSmellWalk(interruptedWalkId).catch(error => {
+      startSmellWalk(interruptedWalkId, connectedDevice?.name).catch(error => {
         console.error('Could not resume smell walk:', error);
         Alert.alert('Could not resume smell walk', String(error));
       });
     },
-    [startSmellWalk],
+    [connectedDevice?.name, startSmellWalk],
   );
 
   useEffect(() => {
@@ -231,15 +231,15 @@ export default function SmellWalkScreen() {
           connectedDevice !== null &&
           (await connectedDevice.isConnected().catch(() => false));
         if (active) {
-          setIsConnected(connected || __DEV__);
-          setShowConnectionModal(!connected && !__DEV__);
+          setIsConnected(connected);
+          setShowConnectionModal(!connected);
         }
       };
 
       checkConnection().catch(() => {
         if (active) {
-          setIsConnected(__DEV__);
-          setShowConnectionModal(!__DEV__);
+          setIsConnected(false);
+          setShowConnectionModal(true);
         }
       });
 
@@ -372,13 +372,13 @@ export default function SmellWalkScreen() {
     const connected =
       connectedDevice !== null &&
       (await connectedDevice.isConnected().catch(() => false));
-    if (!connected && !__DEV__) {
+    if (!connected) {
       Alert.alert(
         'BRIAN e-Nose not connected',
         'Connect to the BRIAN e-Nose first.',
       );
     }
-    setIsConnected(connected || __DEV__);
+    setIsConnected(connected);
     return connected;
   };
 
@@ -408,20 +408,20 @@ export default function SmellWalkScreen() {
     }
 
     try {
-      await startSmellWalk();
+      await startSmellWalk(undefined, connectedDevice?.name);
     } catch (error) {
       Alert.alert('Could not start walk', String(error));
     }
   };
 
   const handleFingerprint = async () => {
-    if ((await requireConnectedDevice()) || __DEV__) {
+    if (await requireConnectedDevice()) {
       setShowFingerprintModal(true);
     }
   };
 
   const goToDeviceScreen = () => {
-    setShowConnectionModal(false && !__DEV__);
+    setShowConnectionModal(false);
     navigation.navigate('Device');
   };
 
@@ -435,7 +435,7 @@ export default function SmellWalkScreen() {
             sensors={analysis.sensors}
             hasData={hasGasData}
             onPress={() => {
-              if (!isConnected && !__DEV__) {
+              if (!isConnected) {
                 setShowConnectionModal(true);
               } else {
                 setShowSensorSheet(true);
@@ -681,7 +681,7 @@ export default function SmellWalkScreen() {
                 accessibilityRole="button"
                 accessibilityLabel="Close connection prompt"
                 style={styles.iconButton}
-                onPress={() => setShowConnectionModal(false && !__DEV__)}>
+                onPress={() => setShowConnectionModal(false)}>
                 <X color={COLORS.ink} size={22} strokeWidth={2} />
               </Pressable>
             </View>
