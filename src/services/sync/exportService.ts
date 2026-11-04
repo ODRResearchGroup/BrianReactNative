@@ -12,7 +12,7 @@ import {
   listSensorRecordsByWalkId,
 } from '../database/db';
 
-const EXPORT_DIR = `${RNFS.DocumentDirectoryPath}/SmellwalkExports`;
+const EXPORT_DIR = `${RNFS.DownloadDirectoryPath}/SmellwalkExports`;
 
 export type ExportManifest = {
   exportedAt: string;
@@ -252,7 +252,7 @@ export async function exportSmellWalkZip(walkId: string): Promise<string> {
   await RNFS.unlink(stagingDir).catch(() => {});
 
   if (Platform.OS === 'android') {
-    return ReactNativeBlobUtil.MediaCollection.copyToMediaStore(
+    ReactNativeBlobUtil.MediaCollection.copyToMediaStore(
       {
         name: `${walkId}.zip`,
         parentFolder: 'SmellWalk',
@@ -261,6 +261,8 @@ export async function exportSmellWalkZip(walkId: string): Promise<string> {
       'Download',
       zipPath,
     );
+
+    return zipPath;
   }
 
   await Share.open({
