@@ -36,6 +36,7 @@ import {
   stopSmellWalkForegroundService,
 } from '../background/SmellWalkForegroundService';
 import { ensureFullLocationAccess } from '../location/locationPermissions';
+import { DateTime } from 'luxon';
 
 export type LiveLocation = {
   latitude: number;
@@ -50,7 +51,10 @@ type InfluxDBContextType = {
   trail: LiveLocation[];
   isSmellWalkActive: boolean;
   walkId: string | null;
-  startSmellWalk: (existingWalkId?: string) => Promise<void>;
+  startSmellWalk: (
+    existingWalkId?: string,
+    deviceName?: string | null,
+  ) => Promise<void>;
   stopSmellWalk: () => Promise<string | null>;
 };
 
@@ -387,7 +391,10 @@ export const InfluxDBProvider = ({
   }, [startWalkFlushTimer]);
 
   const startSmellWalk = useCallback(
-    async (existingWalkId?: string): Promise<void> => {
+    async (
+      existingWalkId?: string,
+      deviceName?: string | null,
+    ): Promise<void> => {
       if (isSmellWalkActiveRef.current) {
         return;
       }
@@ -409,7 +416,8 @@ export const InfluxDBProvider = ({
         }
       }
 
-      const nextWalkId = existingWalkId ?? `walk-${Date.now()}`;
+      const time = `${DateTime.now().toFormat('dd-MM-yy-HH-mm-ss')}`;
+      const nextWalkId = existingWalkId ?? `walk-${time}-${deviceName}`;
 
       walkIdRef.current = nextWalkId;
       walkReadingsRef.current = {};
