@@ -10,6 +10,8 @@ import {
 
 // Create a global event emitter instance
 const eventEmitter: AppEventEmitter = mitt();
+const ESS_SERVICE_UUID = '0000181a-0000-1000-8000-00805f9b34fb';
+const CUSTOM_SERVICE_UUID_NORMALIZED = CUSTOM_SERVICE_UUID.toLowerCase();
 
 // Export the event emitter so other components can use it
 export { eventEmitter };
@@ -28,7 +30,7 @@ type BLEContextType = {
       serviceUUID: string;
       characteristicUUID: string;
       label: string;
-      format?: 'float32' | 'uint8';
+      format?: 'float32' | 'uint8' | 'gas-frame' | 'env-frame';
       sensorKey: string;
       emitEvent?: boolean;
     }[],
@@ -57,9 +59,9 @@ export const BLEProvider = ({ children }: { children: React.ReactNode }) => {
   }, [manager]);
 
   // Request Android permissions
-  const requestPermissions = async () => {
+  const requestPermissions = async (): Promise<boolean> => {
     if (Platform.OS !== 'android') {
-      return;
+      return true;
     }
 
     const permissions: string[] = [
@@ -84,10 +86,16 @@ export const BLEProvider = ({ children }: { children: React.ReactNode }) => {
     if (denied) {
       console.warn('Required BLE permissions not granted');
     }
+    return !denied;
   };
 
   // Scan for devices
-  const scanForDevices = () => {
+  const scanForDevices = async () => {
+    if (!(await requestPermissions())) {
+      return;
+    }
+
+    manager.stopDeviceScan();
     setDevices([]);
 
     manager.startDeviceScan(
@@ -99,7 +107,24 @@ export const BLEProvider = ({ children }: { children: React.ReactNode }) => {
           return;
         }
 
-        if (device && device.name) {
+        const advertisedName = device?.name || device?.localName;
+        const advertisedServices = (device?.serviceUUIDs || []).map(uuid =>
+          uuid.toLowerCase(),
+        );
+        const isBrianDevice =
+          !!device &&
+          (!!advertisedName && /^brian(?:-|$)/i.test(advertisedName) ||
+            advertisedServices.includes(ESS_SERVICE_UUID) ||
+            advertisedServices.includes(CUSTOM_SERVICE_UUID_NORMALIZED));
+
+        if (device) {
+          console.log(
+            `BLE advertisement: ${advertisedName || '<unnamed>'} (${device.id})`,
+            advertisedServices,
+          );
+        }
+
+        if (isBrianDevice) {
           setDevices(prevDevices => {
             if (!prevDevices.find(d => d.id === device.id)) {
               return [...prevDevices, device];
@@ -112,7 +137,7 @@ export const BLEProvider = ({ children }: { children: React.ReactNode }) => {
 
     setTimeout(() => {
       manager.stopDeviceScan();
-    }, 5000);
+    }, 10000);
   };
 
   // Connect to a device
@@ -121,7 +146,7 @@ export const BLEProvider = ({ children }: { children: React.ReactNode }) => {
       const connected = await device.connect();
       const discovered =
         await connected.discoverAllServicesAndCharacteristics();
-      await discovered.requestMTU(256);
+      await discovered.requestMTU(64);
 
       setConnectedDevice(discovered);
       console.log('Connected to', discovered.name || 'Unnamed Device');
@@ -148,11 +173,166 @@ export const BLEProvider = ({ children }: { children: React.ReactNode }) => {
       serviceUUID: string;
       characteristicUUID: string;
       label: string;
-      format?: 'float32' | 'uint8';
+      format?: 'float32' | 'uint8' | 'gas-frame' | 'env-frame';
       sensorKey: string;
       emitEvent?: boolean;
     }[],
   ) => {
+    const decodeBase64 = (base64String: string): Uint8Array => {
+      if (typeof atob === 'function') {
+        const binary = atob(base64String);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) {
+          bytes[i] = binary.charCodeAt(i);
+        }
+        return bytes;
+      }
+      if (typeof Buffer !== 'undefined') {
+        const buffer = Buffer.from(base64String, 'base64');
+        return new Uint8Array(
+          buffer.buffer,
+          buffer.byteOffset,
+          buffer.byteLength,
+        );
+      }
+      throw new Error('No base64 decoder available in this environment');
+    };
+
+    const updateValue = (
+      sourceDevice: Device,
+      serviceUUID: string,
+      characteristicUUID: string,
+      rawValue: string,
+      label: string,
+      sensorKey: string,
+      decodedValue: number,
+      eventTimestamp: Date,
+      emitEvent: boolean,
+    ) => {
+      setCharacteristicValues(prev => ({
+        ...prev,
+        [label]: decodedValue,
+        [sensorKey]: decodedValue,
+      }));
+
+      if (emitEvent) {
+        const bleEvent: BLEDataUpdated = {
+          type: 'ble_data_updated',
+          timestamp: eventTimestamp,
+          deviceId: sourceDevice.id,
+          serviceUUID,
+          characteristicUUID,
+          rawValue,
+          decodedValue,
+          source: sourceDevice.name || 'Unknown Device',
+        };
+        eventEmitter.emit('ble_data_updated', bleEvent);
+      }
+    };
+
+    const frameSlots = {
+      'gas-frame': [
+        ['Formaldehyde', 'HCHO'],
+        ['Methane', 'CH4'],
+        ['Volatile Organic Compounds', 'VOC'],
+        ['Odor', 'Odour'],
+        ['Ethanol', 'Etoh'],
+        ['Hydrogen Sulfide', 'H2S'],
+        ['Nitrogen Dioxide', 'NO2'],
+        ['Ammonia', 'NH3'],
+        ['Carbon Monoxide', 'CO'],
+        ['Smoke', 'Smoke'],
+        ['Hydrogen', 'H2'],
+      ],
+      'env-frame': [
+        ['Temperature', 'TempC'],
+        ['Pressure', 'PressureHPa'],
+        ['Humidity', 'HumidityPct'],
+        ['Gas Resistance', 'GasResOhm'],
+        ['Altitude', 'AltitudeM'],
+      ],
+    } as const;
+
+    const decodeFrame = (
+      bytes: Uint8Array,
+      frameFormat: 'gas-frame' | 'env-frame',
+    ) => {
+      const expectedLength = frameFormat === 'gas-frame' ? 58 : 29;
+      if (bytes.byteLength !== expectedLength || bytes[0] !== 1) {
+        throw new Error(
+          `Invalid ${frameFormat}: expected ${expectedLength} bytes, received ${bytes.byteLength}`,
+        );
+      }
+      const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+      const flags = view.getUint8(1);
+      const timestamp = view.getUint32(4, true);
+      const mask = frameFormat === 'gas-frame'
+        ? view.getUint16(8, true)
+        : view.getUint8(8);
+      const values = frameSlots[frameFormat];
+      const offset = frameFormat === 'gas-frame' ? 10 : 9;
+      const eventTimestamp =
+        flags % 2 === 1 ? new Date(timestamp * 1000) : new Date();
+
+      return values.flatMap(([label, sensorKey], index) => {
+        if (Math.floor(mask / Math.pow(2, index)) % 2 === 0) {
+          return [];
+        }
+        const value = view.getFloat32(offset + index * 4, true);
+        return Number.isFinite(value) ? [{ label, sensorKey, value, eventTimestamp }] : [];
+      });
+    };
+
+    const processValue = (
+      sourceDevice: Device,
+      serviceUUID: string,
+      characteristicUUID: string,
+      rawValue: string,
+      label: string,
+      sensorKey: string,
+      format: 'float32' | 'uint8' | 'gas-frame' | 'env-frame',
+      emitEvent: boolean,
+    ) => {
+      const bytes = decodeBase64(rawValue);
+      if (format === 'gas-frame' || format === 'env-frame') {
+        for (const value of decodeFrame(bytes, format)) {
+          updateValue(
+            sourceDevice,
+            serviceUUID,
+            characteristicUUID,
+            rawValue,
+            value.label,
+            value.sensorKey,
+            value.value,
+            value.eventTimestamp,
+            emitEvent,
+          );
+        }
+        return;
+      }
+      if (bytes.byteLength !== (format === 'uint8' ? 1 : 4)) {
+        throw new Error(`Invalid ${format} length: ${bytes.byteLength}`);
+      }
+      const value =
+        format === 'uint8'
+          ? bytes[0]
+          : new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getFloat32(0, true);
+      if (!Number.isFinite(value)) {
+        throw new Error(`Invalid ${label} notification value`);
+      }
+      updateValue(
+        device,
+        serviceUUID,
+        characteristicUUID,
+        rawValue,
+        label,
+        sensorKey,
+        value,
+        new Date(),
+        emitEvent,
+      );
+    };
+
     for (const {
       serviceUUID,
       characteristicUUID,
@@ -178,88 +358,15 @@ export const BLEProvider = ({ children }: { children: React.ReactNode }) => {
               return;
             }
 
-            const rawValue = characteristic?.value ?? '';
-
-            const decodeBase64Value = (
-              base64String: string,
-              valueFormat: 'float32' | 'uint8',
-            ): number | null => {
-              try {
-                let bytes: Uint8Array;
-
-                if (typeof atob === 'function') {
-                  const binary = atob(base64String);
-                  bytes = new Uint8Array(binary.length);
-                  for (let i = 0; i < binary.length; i++) {
-                    bytes[i] = binary.charCodeAt(i);
-                  }
-                } else if (typeof Buffer !== 'undefined') {
-                  const buf = Buffer.from(base64String, 'base64');
-                  // create a Uint8Array view over the buffer
-                  bytes = new Uint8Array(
-                    buf.buffer,
-                    buf.byteOffset,
-                    buf.byteLength,
-                  );
-                } else {
-                  throw new Error(
-                    'No base64 decoder available in this environment',
-                  );
-                }
-
-                const expectedLength = valueFormat === 'uint8' ? 1 : 4;
-                if (bytes.byteLength !== expectedLength) {
-                  throw new Error(
-                    `Expected ${expectedLength} bytes for ${valueFormat}, received ${bytes.byteLength}`,
-                  );
-                }
-
-                if (valueFormat === 'uint8') {
-                  return bytes[0];
-                }
-
-                const view = new DataView(
-                  bytes.buffer,
-                  bytes.byteOffset || 0,
-                  bytes.byteLength,
-                );
-                return view.getFloat32(0, true);
-              } catch (err) {
-                console.error(`Base64->${valueFormat} decode error:`, err);
-                return null;
-              }
-            };
-
-            const decodedValue = decodeBase64Value(rawValue, format);
-            if (decodedValue === null || !Number.isFinite(decodedValue)) {
-              console.error(`Invalid ${label} notification value`);
+            const rawValue = characteristic?.value;
+            if (!rawValue) {
               return;
             }
-
-            // Update local state for UI - store raw value directly
-            setCharacteristicValues(prev => ({
-              ...prev,
-              [label]: decodedValue,
-              [sensorKey]: decodedValue,
-            }));
-
-            if (emitEvent) {
-              const bleEvent: BLEDataUpdated = {
-                type: 'ble_data_updated',
-                timestamp: new Date(),
-                deviceId: device.id,
-                serviceUUID,
-                characteristicUUID,
-                rawValue,
-                decodedValue,
-                source: device.name || 'Unknown Device',
-              };
-
-              eventEmitter.emit('ble_data_updated', bleEvent);
+            try {
+              processValue(device, serviceUUID, characteristicUUID, rawValue, label, sensorKey, format, emitEvent);
+            } catch (decodeError) {
+              console.error(`Invalid ${label} notification:`, decodeError);
             }
-
-            console.log(`${label}: ${decodedValue}`);
-            console.log(`${sensorKey}: ${decodedValue}`);
           },
         );
 
@@ -268,24 +375,16 @@ export const BLEProvider = ({ children }: { children: React.ReactNode }) => {
           characteristicUUID,
         );
         if (initialValue.value) {
-          const binary =
-            typeof atob === 'function'
-              ? atob(initialValue.value)
-              : Buffer.from(initialValue.value, 'base64').toString('binary');
-          const bytes = Uint8Array.from(binary, character =>
-            character.charCodeAt(0),
+          processValue(
+            device,
+            serviceUUID,
+            characteristicUUID,
+            initialValue.value,
+            label,
+            sensorKey,
+            format,
+            emitEvent,
           );
-          const decodedValue =
-            format === 'uint8'
-              ? bytes[0]
-              : new DataView(bytes.buffer).getFloat32(0, true);
-          if (Number.isFinite(decodedValue)) {
-            setCharacteristicValues(prev => ({
-              ...prev,
-              [label]: decodedValue,
-              [sensorKey]: decodedValue,
-            }));
-          }
         }
       } catch (error) {
         console.error('Enable notification error:', error);
