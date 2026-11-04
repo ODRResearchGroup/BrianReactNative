@@ -113,13 +113,15 @@ export const BLEProvider = ({ children }: { children: React.ReactNode }) => {
         );
         const isBrianDevice =
           !!device &&
-          (!!advertisedName && /^brian(?:-|$)/i.test(advertisedName) ||
+          ((!!advertisedName && /^brian(?:-|$)/i.test(advertisedName)) ||
             advertisedServices.includes(ESS_SERVICE_UUID) ||
             advertisedServices.includes(CUSTOM_SERVICE_UUID_NORMALIZED));
 
         if (device) {
           console.log(
-            `BLE advertisement: ${advertisedName || '<unnamed>'} (${device.id})`,
+            `BLE advertisement: ${advertisedName || '<unnamed>'} (${
+              device.id
+            })`,
             advertisedServices,
           );
         }
@@ -263,12 +265,17 @@ export const BLEProvider = ({ children }: { children: React.ReactNode }) => {
           `Invalid ${frameFormat}: expected ${expectedLength} bytes, received ${bytes.byteLength}`,
         );
       }
-      const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+      const view = new DataView(
+        bytes.buffer,
+        bytes.byteOffset,
+        bytes.byteLength,
+      );
       const flags = view.getUint8(1);
       const timestamp = view.getUint32(4, true);
-      const mask = frameFormat === 'gas-frame'
-        ? view.getUint16(8, true)
-        : view.getUint8(8);
+      const mask =
+        frameFormat === 'gas-frame'
+          ? view.getUint16(8, true)
+          : view.getUint8(8);
       const values = frameSlots[frameFormat];
       const offset = frameFormat === 'gas-frame' ? 10 : 9;
       const eventTimestamp =
@@ -279,7 +286,9 @@ export const BLEProvider = ({ children }: { children: React.ReactNode }) => {
           return [];
         }
         const value = view.getFloat32(offset + index * 4, true);
-        return Number.isFinite(value) ? [{ label, sensorKey, value, eventTimestamp }] : [];
+        return Number.isFinite(value)
+          ? [{ label, sensorKey, value, eventTimestamp }]
+          : [];
       });
     };
 
@@ -316,7 +325,11 @@ export const BLEProvider = ({ children }: { children: React.ReactNode }) => {
       const value =
         format === 'uint8'
           ? bytes[0]
-          : new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getFloat32(0, true);
+          : new DataView(
+              bytes.buffer,
+              bytes.byteOffset,
+              bytes.byteLength,
+            ).getFloat32(0, true);
       if (!Number.isFinite(value)) {
         throw new Error(`Invalid ${label} notification value`);
       }
@@ -363,7 +376,16 @@ export const BLEProvider = ({ children }: { children: React.ReactNode }) => {
               return;
             }
             try {
-              processValue(device, serviceUUID, characteristicUUID, rawValue, label, sensorKey, format, emitEvent);
+              processValue(
+                device,
+                serviceUUID,
+                characteristicUUID,
+                rawValue,
+                label,
+                sensorKey,
+                format,
+                emitEvent,
+              );
             } catch (decodeError) {
               console.error(`Invalid ${label} notification:`, decodeError);
             }
