@@ -14,7 +14,9 @@ import { useBLE } from '../../BLEUniversal';
 import {
   BATTERY_CHARACTERISTIC_DEFINITIONS,
   BOARD_STATUS_DEFINITIONS,
-  SENSOR_DEFINITIONS,
+  CUSTOM_SERVICE_UUID,
+  GAS_FRAME_CHARACTERISTIC_UUID,
+  ENV_FRAME_CHARACTERISTIC_UUID,
   isBoardStatusBitSet,
 } from '../../sensors';
 
@@ -57,12 +59,22 @@ const BLELoggerApp = () => {
       const connectedDeviceInstance = await connectToDevice(selectedDevice);
       const discoveredSpecifications = new Map(
         [
-          ...SENSOR_DEFINITIONS.map(sensor => ({
-            ...sensor,
-            sensorKey: sensor.key,
-            format: 'float32' as const,
+          {
+            serviceUUID: CUSTOM_SERVICE_UUID,
+            characteristicUUID: GAS_FRAME_CHARACTERISTIC_UUID,
+            label: 'Gas frame',
+            sensorKey: 'Gas frame',
+            format: 'gas-frame' as const,
             emitEvent: true,
-          })),
+          },
+          {
+            serviceUUID: CUSTOM_SERVICE_UUID,
+            characteristicUUID: ENV_FRAME_CHARACTERISTIC_UUID,
+            label: 'Environmental frame',
+            sensorKey: 'Environmental frame',
+            format: 'env-frame' as const,
+            emitEvent: true,
+          },
           ...BATTERY_CHARACTERISTIC_DEFINITIONS,
         ].map(definition => [
           `${normalizeUuid(definition.serviceUUID)}:${normalizeUuid(
@@ -76,7 +88,7 @@ const BLELoggerApp = () => {
         characteristicUUID: string;
         label: string;
         sensorKey: string;
-        format?: 'float32' | 'uint8';
+        format?: 'float32' | 'uint8' | 'gas-frame' | 'env-frame';
         emitEvent?: boolean;
       }[] = [];
 
@@ -145,50 +157,48 @@ const BLELoggerApp = () => {
                 </Text>
               </View>
             ) : (
-              devices
-                .filter(device => device.name?.startsWith('Brian'))
-                .map(device => {
-                  const isConnected = connectedDevice?.id === device.id;
-                  const isSelected = selectedDeviceId === device.id;
-                  const batteryPercentage = isConnected
-                    ? characteristicValues['Battery Percentage']
-                    : undefined;
-                  const batteryRuntime = isConnected
-                    ? characteristicValues['Battery Runtime']
-                    : undefined;
+              devices.map(device => {
+                const isConnected = connectedDevice?.id === device.id;
+                const isSelected = selectedDeviceId === device.id;
+                const deviceName =
+                  device.name || device.localName || 'Brian device';
+                const batteryPercentage = isConnected
+                  ? characteristicValues['Battery Percentage']
+                  : undefined;
+                const batteryRuntime = isConnected
+                  ? characteristicValues['Battery Runtime']
+                  : undefined;
 
-                  return (
-                    <Pressable
-                      key={device.id}
-                      onPress={() =>
-                        !isConnected && setSelectedDeviceId(device.id)
-                      }
-                      style={[
-                        styles.deviceItem,
-                        isSelected && styles.deviceItemSelected,
-                      ]}
-                      disabled={isConnected}>
-                      <View style={styles.deviceInfo}>
-                        <Text style={styles.deviceName}>
-                          {device.name || 'Unnamed Device'}
-                        </Text>
-                        <Text
-                          style={[
-                            styles.deviceStatus,
-                            isConnected && styles.deviceStatusConnected,
-                          ]}>
-                          {isConnected ? 'Connected' : 'Not connected'}
-                        </Text>
-                        {isConnected && (
-                          <BatteryLifetime runtimeHours={batteryRuntime} />
-                        )}
-                      </View>
+                return (
+                  <Pressable
+                    key={device.id}
+                    onPress={() =>
+                      !isConnected && setSelectedDeviceId(device.id)
+                    }
+                    style={[
+                      styles.deviceItem,
+                      isSelected && styles.deviceItemSelected,
+                    ]}
+                    disabled={isConnected}>
+                    <View style={styles.deviceInfo}>
+                      <Text style={styles.deviceName}>{deviceName}</Text>
+                      <Text
+                        style={[
+                          styles.deviceStatus,
+                          isConnected && styles.deviceStatusConnected,
+                        ]}>
+                        {isConnected ? 'Connected' : 'Not connected'}
+                      </Text>
                       {isConnected && (
-                        <BatteryIndicator percentage={batteryPercentage} />
+                        <BatteryLifetime runtimeHours={batteryRuntime} />
                       )}
-                    </Pressable>
-                  );
-                })
+                    </View>
+                    {isConnected && (
+                      <BatteryIndicator percentage={batteryPercentage} />
+                    )}
+                  </Pressable>
+                );
+              })
             )}
           </View>
         </View>
