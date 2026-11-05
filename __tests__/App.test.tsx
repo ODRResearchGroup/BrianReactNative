@@ -60,8 +60,6 @@ jest.mock(
   () => () => null,
 );
 
-jest.mock('../src/components/Analysis/Analysis', () => () => null);
-
 jest.mock(
   '../src/components/MappedFingerprints/MappedFingerprints',
   () => () => null,

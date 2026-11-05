@@ -1,6 +1,5 @@
 import { Pressable, View, Text, StyleSheet } from 'react-native';
-import { radarSeries } from '../../common/CustomRadarChart';
-import CustomRadarChart from '../../common/CustomRadarChart';
+import CustomRadarChart, { radarSeries } from '../../common/CustomRadarChart';
 import { COLORS } from '../consts';
 import { SensorAnalysis } from '../types';
 import WaitIcon from './icons/WaitIcon';

@@ -1,5 +1,6 @@
 import React from 'react';
 import { render } from '@testing-library/react-native';
+import SmellWalkScreen from '../src/components/SmellWalk/SmellWalkScreen';
 
 const mockActivateKeepAwake = jest.fn();
 const mockDeactivateKeepAwake = jest.fn();
@@ -56,12 +57,14 @@ jest.mock('../src/components/common/CustomRadarChart', () => () => null);
 
 jest.mock('../src/components/common/FingerprintModal', () => () => null);
 
+jest.mock('../src/components/common/CustomRadarChart', () => ({
+  radarSeries: jest.fn().mockResolvedValue([]),
+}));
+
 jest.mock('../src/services/sync/exportService', () => ({
   exportSmellWalkCsv: jest.fn(),
   exportSmellWalkZip: jest.fn(),
 }));
-
-import SmellWalkScreen from '../src/components/SmellWalk/SmellWalkScreen';
 
 describe('SmellWalkScreen keep awake behavior', () => {
   beforeEach(() => {
