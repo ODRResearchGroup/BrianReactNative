@@ -112,6 +112,17 @@ jest.mock('react-native-fs', () => ({
   })),
 }));
 
+jest.mock('@rnmapbox/maps', () => ({
+  __esModule: true,
+  default: new Proxy({}, { get: () => jest.fn() }),
+}));
+
+jest.mock('react-native-config', () => ({
+  __esModule: true,
+  default: {},
+  Config: {},
+}));
+
 import App from '../src/App';
 
 test('renders correctly', async () => {

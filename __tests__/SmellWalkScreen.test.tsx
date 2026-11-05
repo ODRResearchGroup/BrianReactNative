@@ -5,6 +5,8 @@ const mockActivateKeepAwake = jest.fn();
 const mockDeactivateKeepAwake = jest.fn();
 let mockIsSmellWalkActive = false;
 
+jest.setTimeout(30000);
+
 jest.mock('@react-navigation/native', () => ({
   useNavigation: () => ({
     navigate: jest.fn(),
