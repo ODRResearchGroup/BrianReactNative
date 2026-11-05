@@ -26,6 +26,8 @@ import SmellWalkScreen from './components/SmellWalk/SmellWalkScreen';
 import { InfluxDBProvider } from './services/influx/InfluxDBService';
 import { runSyncWorker } from './services/sync/syncWorker';
 import { checkAndPromptForAppUpdate } from './services/updates/appUpdater';
+import Mapbox from '@rnmapbox/maps';
+import Config from 'react-native-config';
 
 // ─── Navigation param types ───────────────────────────────────────────────────
 
@@ -93,6 +95,10 @@ function DataStack() {
 }
 
 export default function App() {
+  useEffect(() => {
+    Mapbox.setAccessToken(Config.MAPBOX_PUBLIC_TOKEN ?? '');
+  });
+
   useEffect(() => {
     runSyncWorker().catch(() => {});
     checkAndPromptForAppUpdate();

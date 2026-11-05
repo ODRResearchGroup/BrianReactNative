@@ -62,6 +62,33 @@ const InfluxDBContext = createContext<InfluxDBContextType | undefined>(
   undefined,
 );
 
+const LOCATION_INTERVAL_MS = 500;
+const TRAIL_MIN_DISTANCE_M = 1;
+const TRAIL_MAX_ACCURACY_M = 30;
+const TRAIL_MAX_POINTS = 7200;
+
+function distanceM(a: LiveLocation, b: LiveLocation): number {
+  const R = 6371000;
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const dLat = toRad(b.latitude - a.latitude);
+  const dLon = toRad(b.longitude - a.longitude);
+  const h =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(a.latitude)) *
+      Math.cos(toRad(b.latitude)) *
+      Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+
+function toLiveLocation(position: GeoPosition): LiveLocation {
+  return {
+    latitude: position.coords.latitude,
+    longitude: position.coords.longitude,
+    accuracyM: position.coords.accuracy ?? null,
+    recordedAt: position.timestamp,
+  };
+}
+
 /**
  * Maps the canonical sensor registry keys to the field names used by
  * SQLite and InfluxDB.
@@ -185,30 +212,72 @@ export const InfluxDBProvider = ({
         return;
       }
 
+      Geolocation.getCurrentPosition(
+        (position: GeoPosition) => {
+          if (!active || latestLocationRef.current) {
+            return;
+          }
+          const seeded = toLiveLocation(position);
+          latestLocationRef.current = seeded;
+          setLocation(seeded);
+        },
+        error => {
+          console.warn('Initial location error:', error.message);
+        },
+        {
+          enableHighAccuracy: false,
+          maximumAge: 60000,
+          timeout: 10000,
+        },
+      );
+
       watchId = Geolocation.watchPosition(
         (position: GeoPosition) => {
-          const nextLocation: LiveLocation = {
-            latitude: position.coords.latitude,
-            longitude: position.coords.longitude,
-            accuracyM: position.coords.accuracy ?? null,
-            recordedAt: position.timestamp,
-          };
+          const nextLocation = toLiveLocation(position);
+
+          // Ignore duplicate deliveries of the same fix.
+          const previousLocation = latestLocationRef.current;
+          if (
+            previousLocation &&
+            previousLocation.recordedAt === nextLocation.recordedAt
+          ) {
+            return;
+          }
 
           latestLocationRef.current = nextLocation;
           setLocation(nextLocation);
 
           if (isSmellWalkActiveRef.current) {
-            setTrail(previous => [...previous, nextLocation]);
+            const accurateEnough =
+              nextLocation.accuracyM === null ||
+              nextLocation.accuracyM <= TRAIL_MAX_ACCURACY_M;
+
+            if (accurateEnough) {
+              setTrail(previous => {
+                const last = previous[previous.length - 1];
+                if (
+                  last &&
+                  distanceM(last, nextLocation) < TRAIL_MIN_DISTANCE_M
+                ) {
+                  return previous;
+                }
+                const next = [...previous, nextLocation];
+                return next.length > TRAIL_MAX_POINTS
+                  ? next.slice(-TRAIL_MAX_POINTS)
+                  : next;
+              });
+            }
           }
         },
         error => {
           console.warn('Live location error:', error.message);
         },
         {
+          accuracy: { android: 'high', ios: 'best' },
           enableHighAccuracy: true,
           distanceFilter: 0,
-          interval: 2000,
-          fastestInterval: 1000,
+          interval: LOCATION_INTERVAL_MS,
+          fastestInterval: LOCATION_INTERVAL_MS,
           forceRequestLocation: true,
           showLocationDialog: true,
           showsBackgroundLocationIndicator: true,

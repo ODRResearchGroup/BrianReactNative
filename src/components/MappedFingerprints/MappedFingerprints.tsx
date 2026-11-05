@@ -1,18 +1,33 @@
-import React, { useEffect, useState, useRef, useCallback } from 'react';
+import React, {
+  useEffect,
+  useState,
+  useRef,
+  useCallback,
+  useMemo,
+} from 'react';
 import { View, StyleSheet, ActivityIndicator, Text } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import {
   MapView,
   Camera,
   ShapeSource,
   CircleLayer,
-} from '@maplibre/maplibre-react-native';
+  MarkerView,
+} from '@rnmapbox/maps';
 import { FeatureCollection, Feature, Point } from 'geojson';
 import useLiveLocation from '../../hooks/useLiveLocation';
 import { listSensorRecords, SensorRecord } from '../../services/database/db';
-import ExpandedFingerprintView from '../common/ExpandedFingerprintView';
 import { SavedFingerprintData } from '../../types/fingerprintTypes';
+import FingerprintMapCard from './FingerprintMapCard';
+import FingerprintDetailView from '../common/FingerprintDetailView';
+
+const USER_ZOOM = 15;
+const FALLBACK_ZOOM = 10;
+const FALLBACK_CENTER: [number, number] = [10, 50];
+const FALLBACK_WORLD_ZOOM = 3;
+
+const CARD_MIN_ZOOM = 13;
+const MAX_CARDS = 30;
 
 const userPointStyle = {
   circleColor: '#007aff',
@@ -23,10 +38,30 @@ const userPointStyle = {
 
 const fingerprintPointStyle = {
   circleColor: '#ff7043',
-  circleRadius: 10,
+  circleRadius: 5,
   circleStrokeWidth: 2,
   circleStrokeColor: '#fff',
 };
+
+type Viewport = {
+  zoom: number;
+  bounds?: { ne: [number, number]; sw: [number, number] };
+};
+
+function isValidCoordinate(
+  c: { latitude: number; longitude: number } | null | undefined,
+): c is { latitude: number; longitude: number } {
+  return (
+    !!c &&
+    Number.isFinite(c.latitude) &&
+    Number.isFinite(c.longitude) &&
+    Math.abs(c.latitude) <= 90 &&
+    Math.abs(c.longitude) <= 180 &&
+    !(c.latitude === 0 && c.longitude === 0)
+  );
+}
+
+const isFingerprint = (r: SensorRecord) => r.recordType !== 'walk_sample';
 
 function recordToLegacy(record: SensorRecord): SavedFingerprintData {
   return {
@@ -74,8 +109,77 @@ export default function MappedFingerprints() {
   const [selectedRecord, setSelectedRecord] = useState<SensorRecord | null>(
     null,
   );
+  const [mapReady, setMapReady] = useState(false);
+  const [viewport, setViewport] = useState<Viewport | null>(null);
+  const [focusedId, setFocusedId] = useState<string | null>(null);
+  const focusedIdRef = useRef<string | null>(null);
+  focusedIdRef.current = focusedId;
+  const lastFeaturePressRef = useRef(0);
   const cameraRef = useRef<React.ElementRef<typeof Camera> | null>(null);
+  const centeredOnUserRef = useRef(false);
+  const centeredOnFallbackRef = useRef(false);
   const { location } = useLiveLocation();
+
+  const validLocation = isValidCoordinate(location) ? location : null;
+  const userLat = validLocation?.latitude;
+  const userLng = validLocation?.longitude;
+
+  const fingerprints = useMemo(() => records.filter(isFingerprint), [records]);
+
+  const firstLocatedRecord = fingerprints.find(
+    r => r.latitude !== null && r.longitude !== null,
+  );
+
+  const defaultZoom =
+    userLat !== undefined && userLng !== undefined
+      ? USER_ZOOM
+      : firstLocatedRecord
+      ? FALLBACK_ZOOM
+      : FALLBACK_WORLD_ZOOM;
+
+  const effectiveZoom = viewport?.zoom ?? defaultZoom;
+  const effectiveZoomRef = useRef(effectiveZoom);
+  effectiveZoomRef.current = effectiveZoom;
+
+  const visibleCards = useMemo(() => {
+    if (effectiveZoom < CARD_MIN_ZOOM) {
+      return [];
+    }
+
+    let candidates = fingerprints.filter(
+      r => r.latitude !== null && r.longitude !== null,
+    );
+
+    const bounds = viewport?.bounds;
+    if (bounds) {
+      const { ne, sw } = bounds;
+      const lngSpan = ne[0] - sw[0];
+      const latSpan = ne[1] - sw[1];
+      const minLng = sw[0] - 0.25 * lngSpan;
+      const maxLng = ne[0] + 0.25 * lngSpan;
+      const minLat = sw[1] - 0.1 * latSpan;
+      const maxLat = ne[1] + 0.4 * latSpan;
+      candidates = candidates.filter(
+        r =>
+          r.longitude! >= minLng &&
+          r.longitude! <= maxLng &&
+          r.latitude! >= minLat &&
+          r.latitude! <= maxLat,
+      );
+    }
+
+    return candidates.slice(0, MAX_CARDS);
+  }, [fingerprints, viewport, effectiveZoom]);
+
+  const cards = useMemo(() => {
+    const focused = focusedId
+      ? fingerprints.find(r => r.id === focusedId) ?? null
+      : null;
+    const base = visibleCards.filter(r => r.id !== focusedId);
+    return focused && focused.latitude !== null && focused.longitude !== null
+      ? [...base, focused]
+      : base;
+  }, [visibleCards, fingerprints, focusedId]);
 
   const loadRecords = useCallback(async () => {
     try {
@@ -94,19 +198,92 @@ export default function MappedFingerprints() {
     }, [loadRecords]),
   );
 
-  useEffect(() => {
-    if (records.length && cameraRef.current && !location) {
-      const first = records.find(
-        r => r.latitude !== null && r.longitude !== null,
-      );
-      if (first) {
-        cameraRef.current.setCamera({
-          centerCoordinate: [first.longitude!, first.latitude!],
-          zoomLevel: 10,
-        });
-      }
+  const handleMapIdle = useCallback((state: any) => {
+    const props = state?.properties;
+    if (!props || typeof props.zoom !== 'number') {
+      return;
     }
-  }, [location, records]);
+    const ne = props.bounds?.ne;
+    const sw = props.bounds?.sw;
+    const boundsValid =
+      Array.isArray(ne) &&
+      Array.isArray(sw) &&
+      [ne[0], ne[1], sw[0], sw[1]].every(
+        (n: unknown) => typeof n === 'number' && Number.isFinite(n),
+      );
+    setViewport({
+      zoom: props.zoom,
+      bounds: boundsValid
+        ? {
+            ne: [ne[0], ne[1]] as [number, number],
+            sw: [sw[0], sw[1]] as [number, number],
+          }
+        : undefined,
+    });
+  }, []);
+
+  const handleCardPress = useCallback((record: SensorRecord) => {
+    if (focusedIdRef.current === record.id) {
+      setSelectedRecord(record);
+      return;
+    }
+    setFocusedId(record.id);
+    if (record.latitude !== null && record.longitude !== null) {
+      const zoomedOut = effectiveZoomRef.current < CARD_MIN_ZOOM + 1;
+      cameraRef.current?.setCamera({
+        centerCoordinate: [record.longitude, record.latitude],
+        ...(zoomedOut ? { zoomLevel: CARD_MIN_ZOOM + 2 } : {}),
+        animationMode: 'easeTo',
+        animationDuration: 400,
+      });
+    }
+  }, []);
+
+  const handleMapPress = useCallback(() => {
+    if (Date.now() - lastFeaturePressRef.current < 400) {
+      return;
+    }
+    setFocusedId(null);
+  }, []);
+
+  useEffect(() => {
+    if (
+      !mapReady ||
+      centeredOnUserRef.current ||
+      userLat === undefined ||
+      userLng === undefined
+    ) {
+      return;
+    }
+    cameraRef.current?.setCamera({
+      centerCoordinate: [userLng, userLat],
+      zoomLevel: USER_ZOOM,
+      animationMode: 'moveTo',
+      animationDuration: 0,
+    });
+    centeredOnUserRef.current = true;
+  }, [mapReady, userLat, userLng]);
+
+  useEffect(() => {
+    if (
+      !mapReady ||
+      centeredOnUserRef.current ||
+      centeredOnFallbackRef.current ||
+      !firstLocatedRecord
+    ) {
+      return;
+    }
+    cameraRef.current?.setCamera({
+      centerCoordinate: [
+        firstLocatedRecord.longitude!,
+        firstLocatedRecord.latitude!,
+      ],
+      zoomLevel: FALLBACK_ZOOM,
+      animationMode: 'moveTo',
+      animationDuration: 0,
+    });
+    centeredOnFallbackRef.current = true;
+  }, [mapReady, firstLocatedRecord]);
 
   if (selectedRecord) {
     const tags = selectedRecord.tagsJson
@@ -119,13 +296,16 @@ export default function MappedFingerprints() {
         })()
       : [];
     return (
-      <ExpandedFingerprintView
+      <FingerprintDetailView
         data={recordToLegacy(selectedRecord)}
-        sensorRecordId={selectedRecord.id}
-        initialTags={tags}
+        tags={tags}
         onBack={() => {
+          centeredOnUserRef.current = false;
+          centeredOnFallbackRef.current = false;
+          setMapReady(false);
+          setViewport(null);
+          setFocusedId(null);
           setSelectedRecord(null);
-          loadRecords();
         }}
       />
     );
@@ -133,7 +313,7 @@ export default function MappedFingerprints() {
 
   const features: FeatureCollection<Point> = {
     type: 'FeatureCollection',
-    features: records
+    features: fingerprints
       .filter(r => r.latitude !== null && r.longitude !== null)
       .map(
         r =>
@@ -150,20 +330,36 @@ export default function MappedFingerprints() {
 
   if (loading) {
     return (
-      <SafeAreaView style={[styles.fullscreen, styles.center]}>
+      <View style={[styles.fullscreen, styles.center]}>
         <ActivityIndicator size="large" />
-      </SafeAreaView>
+      </View>
     );
   }
 
   return (
-    <SafeAreaView style={styles.fullscreen}>
+    <View style={styles.fullscreen}>
       <MapView
         style={styles.map}
-        mapStyle="https://basemaps.cartocdn.com/gl/positron-gl-style/style.json">
-        <Camera ref={cameraRef} />
+        styleURL="https://basemaps.cartocdn.com/gl/positron-gl-style/style.json"
+        attributionEnabled={false}
+        logoEnabled={false}
+        onDidFinishLoadingMap={() => setMapReady(true)}
+        onMapIdle={handleMapIdle}
+        onPress={handleMapPress}>
+        <Camera
+          ref={cameraRef}
+          defaultSettings={{
+            centerCoordinate:
+              userLat !== undefined && userLng !== undefined
+                ? [userLng, userLat]
+                : firstLocatedRecord
+                ? [firstLocatedRecord.longitude!, firstLocatedRecord.latitude!]
+                : FALLBACK_CENTER,
+            zoomLevel: defaultZoom,
+          }}
+        />
 
-        {location && (
+        {validLocation && (
           <ShapeSource
             id="user-location"
             shape={{
@@ -173,7 +369,10 @@ export default function MappedFingerprints() {
                   type: 'Feature',
                   geometry: {
                     type: 'Point',
-                    coordinates: [location.longitude, location.latitude],
+                    coordinates: [
+                      validLocation.longitude,
+                      validLocation.latitude,
+                    ],
                   },
                   properties: {},
                 },
@@ -192,15 +391,28 @@ export default function MappedFingerprints() {
               return;
             }
             const id = f.properties?.id as string;
-            const record = records.find(r => r.id === id);
+            const record = fingerprints.find(r => r.id === id);
             if (record) {
-              const [lon, lat] = f.geometry.coordinates;
-              cameraRef.current?.setCamera({ centerCoordinate: [lon, lat] });
-              setSelectedRecord(record);
+              lastFeaturePressRef.current = Date.now();
+              handleCardPress(record);
             }
           }}>
           <CircleLayer id="fingerprint-points" style={fingerprintPointStyle} />
         </ShapeSource>
+
+        {cards.map(record => (
+          <MarkerView
+            key={record.id}
+            coordinate={[record.longitude!, record.latitude!]}
+            anchor={{ x: 0.5, y: 1 }}>
+            <FingerprintMapCard
+              record={record}
+              onPress={handleCardPress}
+              focused={record.id === focusedId}
+              dimmed={focusedId !== null && record.id !== focusedId}
+            />
+          </MarkerView>
+        ))}
       </MapView>
 
       {features.features.length === 0 && (
@@ -210,7 +422,7 @@ export default function MappedFingerprints() {
           </Text>
         </View>
       )}
-    </SafeAreaView>
+    </View>
   );
 }
 
