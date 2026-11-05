@@ -1,4 +1,5 @@
 import React, {
+  memo,
   useState,
   useRef,
   useEffect,
@@ -12,96 +13,143 @@ import {
   Text,
   ScrollView,
   Pressable,
+  TouchableOpacity,
   Dimensions,
   Modal,
+  Alert,
 } from 'react-native';
 import {
   NavigationProp,
   useFocusEffect,
   useNavigation,
 } from '@react-navigation/native';
-import { useBLE } from '../../BLEUniversal';
-import Slider from '@react-native-community/slider';
-import { BatteryIndicator, BatteryLifetime } from '../common/BatteryStatus';
-import CustomRadarChart from '../common/CustomRadarChart';
-import FingerprintModal from '../common/FingerprintModal';
-import TimedProgressBar from './components/TimeBar';
-import { SensorReadings } from '../../types/fingerprintTypes';
-import { SensorEvent } from '../../types/events';
-import { Alert } from 'react-native';
 import Svg, { Path, Line, Rect } from 'react-native-svg';
+import { useBLE } from '../../BLEUniversal';
+import { BatteryIndicator, BatteryLifetime } from '../common/BatteryStatus';
+import CustomRadarChart, { radarSeries } from '../common/CustomRadarChart';
+import FingerprintModal from '../common/FingerprintModal';
 import { useInfluxDB } from '../../services/influx/InfluxDBService';
+import {
+  GAS_SENSOR_DEFINITIONS,
+  GasSensorKey,
+  readGasValues,
+  sensorTitle,
+} from '../../sensors';
 
 const { width } = Dimensions.get('window');
 
-// Mini plotter config
-const PLOT_HISTORY_SIZE = 30; // 30 seconds
-const PLOT_WIDTH = width - 80;
+const PLOT_WINDOW_S = 5 * 60;
+const SAMPLE_MS = 1000;
+const PLOT_HISTORY_SIZE = (PLOT_WINDOW_S * 1000) / SAMPLE_MS;
+const WINDOW_LABEL = `last ${PLOT_WINDOW_S / 60} minutes`;
+const PLOT_WIDTH = width - 72;
 const PLOT_HEIGHT = 150;
 
-type SensorKey =
-  | 'CH4'
-  | 'NH3'
-  | 'HCHO'
-  | 'VOC'
-  | 'Odour'
-  | 'H2S'
-  | 'Etoh'
-  | 'NO2';
+type SensorKey = GasSensorKey;
+const SENSORS = GAS_SENSOR_DEFINITIONS;
+
+const COLORS = {
+  bg: '#f6f6f3',
+  surface: '#ffffff',
+  border: '#e4e4df',
+  ink: '#1b1c1a',
+  muted: '#666963',
+  green: '#1f5c3f',
+  greenTint: '#e6efe9',
+  red: '#b3261e',
+  line: '#0b66c3',
+};
 
 interface PlotPoint {
   time: number;
   value: number;
 }
 
+const emptyHistory = (): Record<SensorKey, PlotPoint[]> =>
+  SENSORS.reduce((acc, s) => {
+    acc[s.key] = [];
+    return acc;
+  }, {} as Record<SensorKey, PlotPoint[]>);
+
+const ChevronIcon = ({ size = 18, color = COLORS.muted }) => (
+  <Svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke={color}
+    strokeWidth={2}
+    strokeLinecap="round"
+    strokeLinejoin="round">
+    <Path d="m9 18 6-6-6-6" />
+  </Svg>
+);
+
+const LiveRadar = memo(function LiveRadar({
+  items,
+}: {
+  items: { chartLabel: string; value: number }[];
+}) {
+  const data = useMemo(
+    () =>
+      radarSeries(
+        'live-data',
+        'Live Reading',
+        items.map(d => ({ x: d.chartLabel, y: d.value })),
+      ),
+    [items],
+  );
+  return (
+    <View style={styles.radarBody}>
+      <View style={styles.chartWrap}>
+        <CustomRadarChart
+          data={data}
+          size={Math.min(width - 64, 320)}
+          gridLevels={5}
+        />
+      </View>
+    </View>
+  );
+});
+
 export default function LiveData() {
   const { characteristicValues, connectedDevice } = useBLE();
   const { walkId } = useInfluxDB();
   const navigation = useNavigation<NavigationProp<{ Device: undefined }>>();
-  const [isConnected, setIsConnected] = useState(__DEV__);
+  const [isConnected, setIsConnected] = useState(false);
 
   const batteryPercentage = characteristicValues['Battery Percentage'];
   const batteryRuntime = characteristicValues['Battery Runtime'];
-  const methane = characteristicValues.Methane || 0;
-  const ammonia = characteristicValues.Ammonia || 0;
-  const formaldehyde = characteristicValues.Formaldehyde || 0;
-  const voc = characteristicValues['Voletile Organic Compounds'] || 0;
-  const odour = characteristicValues.Odor || 0;
-  const hydrogenSulfide = characteristicValues['Hydrogen Sulfide'] || 0;
-  const ethanol = characteristicValues.Ethanol || 0;
-  const nitrogenDioxide = characteristicValues['Nitrogen Dioxide'] || 0;
-
-  const [showFingerprintModal, setShowFingerprintModal] = useState(false);
-  const [pendingFingerprint, setPendingFingerprint] =
-    useState<SensorEvent | null>(null);
-  const [showTimeBar, setShowTimeBar] = useState(false);
-  const [samplingMode, setSamplingMode] = useState<'idle' | 'fingerprint'>(
-    'idle',
+  const currentValues = useMemo(
+    () => readGasValues(characteristicValues),
+    [characteristicValues],
   );
-  const samplingRef = useRef<{
-    intervalId: number | null;
-    samples: SensorReadings[];
-  }>({
-    intervalId: null,
-    samples: [],
-  });
-  const [zoomLevel, setZoomLevel] = useState(0.1);
+  const valuesRef = useRef(currentValues);
+  valuesRef.current = currentValues;
 
-  // Mini plotter state
+  useEffect(() => {
+    const id = setInterval(() => {
+      const t = (Date.now() - startTimeRef.current) / 1000;
+      setPlotHistory(prev => {
+        const next = {} as Record<SensorKey, PlotPoint[]>;
+        SENSORS.forEach(s => {
+          next[s.key] = [
+            ...prev[s.key],
+            { time: t, value: valuesRef.current[s.key] },
+          ].slice(-PLOT_HISTORY_SIZE);
+        });
+        return next;
+      });
+    }, SAMPLE_MS);
+    return () => clearInterval(id);
+  }, []);
+  const [showFingerprintModal, setShowFingerprintModal] = useState(false);
+
   const [selectedSensor, setSelectedSensor] = useState<SensorKey | null>(null);
-  const [plotHistory, setPlotHistory] = useState<
-    Record<SensorKey, PlotPoint[]>
-  >({
-    CH4: [],
-    NH3: [],
-    HCHO: [],
-    VOC: [],
-    Odour: [],
-    H2S: [],
-    Etoh: [],
-    NO2: [],
-  });
+  const [plotHistory, setPlotHistory] =
+    useState<Record<SensorKey, PlotPoint[]>>(emptyHistory);
   const startTimeRef = useRef<number>(Date.now());
+  const selectedDef = SENSORS.find(s => s.key === selectedSensor) ?? null;
 
   useFocusEffect(
     useCallback(() => {
@@ -111,13 +159,13 @@ export default function LiveData() {
           connectedDevice !== null &&
           (await connectedDevice.isConnected().catch(() => false));
         if (active) {
-          setIsConnected(__DEV__ || connected);
+          setIsConnected(connected);
         }
       };
 
       checkConnection().catch(() => {
         if (active) {
-          setIsConnected(__DEV__);
+          setIsConnected(false);
         }
       });
 
@@ -127,30 +175,6 @@ export default function LiveData() {
     }, [connectedDevice]),
   );
 
-  const currentValues = useMemo<Record<SensorKey, number>>(
-    () => ({
-      CH4: methane,
-      NH3: ammonia,
-      HCHO: formaldehyde,
-      VOC: voc,
-      Odour: odour,
-      H2S: hydrogenSulfide,
-      Etoh: ethanol,
-      NO2: nitrogenDioxide,
-    }),
-    [
-      methane,
-      ammonia,
-      formaldehyde,
-      voc,
-      odour,
-      hydrogenSulfide,
-      ethanol,
-      nitrogenDioxide,
-    ],
-  );
-
-  // Update plot history
   useEffect(() => {
     const now = Date.now();
     const elapsedSeconds = (now - startTimeRef.current) / 1000;
@@ -165,7 +189,6 @@ export default function LiveData() {
         };
 
         const points = [...prev[key], newPoint];
-        // Keep last PLOT_HISTORY_SIZE points
         updated[key] = points.slice(-PLOT_HISTORY_SIZE);
       });
 
@@ -175,176 +198,42 @@ export default function LiveData() {
 
   const radarData = useMemo(
     () =>
-      [
-        { label: 'Ch4', key: 'CH4' as SensorKey, value: methane },
-        { label: 'NH3', key: 'NH3' as SensorKey, value: ammonia },
-        { label: 'HCHO', key: 'HCHO' as SensorKey, value: formaldehyde },
-        { label: 'VOC', key: 'VOC' as SensorKey, value: voc },
-        { label: 'Odour', key: 'Odour' as SensorKey, value: odour },
-        { label: 'H2S', key: 'H2S' as SensorKey, value: hydrogenSulfide },
-        { label: 'Etoh', key: 'Etoh' as SensorKey, value: ethanol },
-        { label: 'No2', key: 'NO2' as SensorKey, value: nitrogenDioxide },
-      ].filter(item => !isNaN(item.value)),
-    [
-      methane,
-      ammonia,
-      formaldehyde,
-      voc,
-      odour,
-      hydrogenSulfide,
-      ethanol,
-      nitrogenDioxide,
-    ],
+      SENSORS.map(s => ({ ...s, value: currentValues[s.key] })).filter(
+        item => !isNaN(item.value),
+      ),
+    [currentValues],
   );
-
-  const chartData = [
-    {
-      key: 'live-data',
-      title: 'Live Reading',
-      values: radarData.map(d => ({ x: d.label, y: d.value })),
-      color: {
-        fill: 'hsla(210, 100%, 50%, 0.35)',
-        stroke: 'hsla(210, 100%, 40%, 1)',
-      },
-    },
-  ];
-
-  const getCurrentReadings = (): SensorReadings => ({
-    CH4: methane,
-    NH3: ammonia,
-    HCHO: formaldehyde,
-    VOC: voc,
-    Odour: odour,
-    H2S: hydrogenSulfide,
-    Etoh: ethanol,
-    NO2: nitrogenDioxide,
-  });
-
-  const startSampling = (
-    mode: 'fingerprint',
-    durationMs: number,
-    sampleCount: number,
-  ) => {
-    samplingRef.current.samples = [];
-    setSamplingMode(mode);
-    const intervalMs = Math.max(1000, Math.floor(durationMs / sampleCount));
-
-    const takeSample = () => {
-      const sensorReadings: SensorReadings = getCurrentReadings();
-      samplingRef.current.samples.push(sensorReadings);
-    };
-
-    takeSample();
-    const id = setInterval(takeSample, intervalMs) as unknown as number;
-    samplingRef.current.intervalId = id;
-  };
 
   const handleFingerprint = async () => {
     const connected =
-      __DEV__ ||
-      (connectedDevice !== null &&
-        (await connectedDevice.isConnected().catch(() => false)));
+      connectedDevice !== null &&
+      (await connectedDevice.isConnected().catch(() => false));
     if (!connected) {
       setIsConnected(false);
       Alert.alert('e-nose not connected', 'Connect to the e-nose first.');
       return;
     }
 
-    setShowTimeBar(true);
-    startSampling('fingerprint', 15000, 15);
+    setShowFingerprintModal(true);
   };
 
   const goToDeviceScreen = () => navigation.navigate('Device');
 
-  const stopSamplingAndAverage = (): SensorReadings | null => {
-    const id = samplingRef.current.intervalId;
-    if (id) {
-      clearInterval(id as any);
-      samplingRef.current.intervalId = null;
-    }
-
-    const samples = samplingRef.current.samples;
-    if (!samples || samples.length === 0) {
-      return null;
-    }
-
-    const sum = samples.reduce(
-      (accumulated, sample) => ({
-        CH4: (accumulated.CH4 ?? 0) + (sample.CH4 ?? 0),
-        NH3: (accumulated.NH3 ?? 0) + (sample.NH3 ?? 0),
-        HCHO: (accumulated.HCHO ?? 0) + (sample.HCHO ?? 0),
-        VOC: (accumulated.VOC ?? 0) + (sample.VOC ?? 0),
-        Odour: (accumulated.Odour ?? 0) + (sample.Odour ?? 0),
-        H2S: (accumulated.H2S ?? 0) + (sample.H2S ?? 0),
-        Etoh: (accumulated.Etoh ?? 0) + (sample.Etoh ?? 0),
-        NO2: (accumulated.NO2 ?? 0) + (sample.NO2 ?? 0),
-      }),
-      { CH4: 0, NH3: 0, HCHO: 0, VOC: 0, Odour: 0, H2S: 0, Etoh: 0, NO2: 0 },
-    );
-
-    const avg: SensorReadings = {
-      CH4: (sum.CH4 ?? 0) / samples.length,
-      NH3: (sum.NH3 ?? 0) / samples.length,
-      HCHO: (sum.HCHO ?? 0) / samples.length,
-      VOC: (sum.VOC ?? 0) / samples.length,
-      Odour: (sum.Odour ?? 0) / samples.length,
-      H2S: (sum.H2S ?? 0) / samples.length,
-      Etoh: (sum.Etoh ?? 0) / samples.length,
-      NO2: (sum.NO2 ?? 0) / samples.length,
-    };
-
-    samplingRef.current.samples = [];
-    setSamplingMode('idle');
-    return avg;
-  };
-
-  const handleFingerprintComplete = () => {
-    const avg = stopSamplingAndAverage();
-    setShowTimeBar(false);
-
-    if (samplingMode === 'fingerprint' && avg) {
-      const fingerprint: SensorEvent = {
-        type: 'sensor_reading',
-        timestamp: new Date(),
-        source: 'BLE Device',
-        olfactoryData: {
-          readings: avg,
-          units: {
-            CH4: 'V',
-            NH3: 'V',
-            HCHO: 'V',
-            VOC: 'V',
-            Odour: 'V',
-            H2S: 'V',
-            Etoh: 'V',
-            NO2: 'V',
-          },
-        },
-      } as any;
-
-      setPendingFingerprint(fingerprint);
-      setShowFingerprintModal(true);
-    }
-  };
-
-  // Generate mini plot path with DYNAMIC scale per sensor + 20% headroom
   const generateMiniPlot = (sensorKey: SensorKey): string => {
     const points = plotHistory[sensorKey];
     if (points.length < 2) {
       return '';
     }
 
-    // Find min/max for THIS sensor's history
     const values = points.map(p => p.value);
     const dataMin = Math.min(...values);
     const dataMax = Math.max(...values);
     const dataRange = dataMax - dataMin;
 
-    // Add 20% breathing room (10% on top, 10% on bottom)
     const padding = dataRange * 0.1;
     const Y_MIN = Math.max(0, dataMin - padding);
     const Y_MAX = dataMax + padding;
-    const range = Y_MAX - Y_MIN || 0.001; // Avoid division by zero
+    const range = Y_MAX - Y_MIN || 0.001;
 
     const xStep = PLOT_WIDTH / (PLOT_HISTORY_SIZE - 1);
 
@@ -360,112 +249,133 @@ export default function LiveData() {
   };
 
   return (
-    <ScrollView
-      style={styles.scrollView}
-      contentContainerStyle={styles.container}>
-      <SafeAreaView style={styles.safeArea}>
-        <FingerprintModal
-          visible={showFingerprintModal}
-          onClose={() => {
-            setShowFingerprintModal(false);
-            setPendingFingerprint(null);
-          }}
-          walkId={walkId}
-          initialFingerprint={pendingFingerprint}
-        />
+    <SafeAreaView style={styles.root}>
+      <FingerprintModal
+        visible={showFingerprintModal}
+        onClose={() => setShowFingerprintModal(false)}
+        walkId={walkId}
+        initialFingerprint={null}
+      />
 
-        <TimedProgressBar
-          visible={showTimeBar}
-          onClose={() => setShowTimeBar(false)}
-          duration={15000}
-          onComplete={handleFingerprintComplete}
-        />
-
-        <View style={styles.liveDataSection}>
-          <Text style={styles.title}>Live Data</Text>
-
-          <View style={styles.batterySummary}>
-            <View style={styles.batterySummaryHeader}>
-              <Text style={styles.batterySummaryLabel}>Battery</Text>
-              <BatteryIndicator percentage={batteryPercentage} />
-            </View>
-            <BatteryLifetime runtimeHours={batteryRuntime} />
-          </View>
-
-          {/* Radar Chart */}
-          <CustomRadarChart
-            data={chartData}
-            size={320}
-            maxValue={1}
-            zoomLevel={zoomLevel}
-            gridLevels={5}
-          />
-
-          {/* Zoom Slider */}
-          <Slider
-            style={styles.slider}
-            minimumValue={0.001}
-            maximumValue={1}
-            step={0.001}
-            value={zoomLevel}
-            onValueChange={setZoomLevel}
-          />
-
-          {/* Fingerprint Button */}
-          <Pressable
+      <View style={styles.header}>
+        <Text style={styles.headerTitle} accessibilityRole="header">
+          Live data
+        </Text>
+        <View style={styles.statusPill}>
+          <View
             style={[
-              styles.analyseButton,
-              !isConnected && styles.disabledButton,
+              styles.statusDot,
+              { backgroundColor: isConnected ? COLORS.green : COLORS.muted },
             ]}
-            accessibilityState={{ disabled: !isConnected }}
-            onPress={isConnected ? handleFingerprint : goToDeviceScreen}>
-            <Text style={styles.analyseButtonText}>Fingerprint</Text>
-          </Pressable>
+          />
+          <Text style={styles.statusText}>
+            {isConnected ? 'Connected' : 'Not connected'}
+          </Text>
+        </View>
+      </View>
 
-          {/* Sensor Grid - Now clickable */}
-          <View style={styles.sensorGrid}>
-            {radarData.map(item => (
-              <Pressable
-                key={item.label}
-                style={styles.sensorCell}
-                onPress={() => setSelectedSensor(item.key)}>
-                <Text style={styles.sensorLabel}>{item.label}</Text>
-                <Text style={styles.sensorValue}>{item.value.toFixed(4)}</Text>
-                <Text style={styles.tapHint}>Tap for plot</Text>
-              </Pressable>
-            ))}
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}>
+        <View style={styles.card}>
+          <View style={styles.cardHeader}>
+            <Text style={styles.cardLabel}>Battery</Text>
+            <BatteryIndicator percentage={batteryPercentage} />
           </View>
+          <BatteryLifetime runtimeHours={batteryRuntime} />
         </View>
 
-        {/* Mini Plotter Modal */}
-        {selectedSensor && (
-          <Modal
-            visible={true}
-            animationType="slide"
-            transparent={true}
-            onRequestClose={() => setSelectedSensor(null)}>
-            <View style={styles.modalOverlay}>
-              <View style={styles.plotterModal}>
-                <View style={styles.plotterHeader}>
-                  <Text style={styles.plotterTitle}>
-                    {selectedSensor} - Last 30s
-                  </Text>
-                  <Pressable onPress={() => setSelectedSensor(null)}>
-                    <Text style={styles.closeButton}>✕</Text>
-                  </Pressable>
-                </View>
+        <View style={styles.card}>
+          <Text style={styles.cardLabel}>Live reading</Text>
+          <LiveRadar items={radarData} />
+        </View>
 
-                <View style={styles.plotContainer}>
+        <View style={styles.sectionHead}>
+          <Text style={styles.sectionTitle}>All gas channels</Text>
+          <Text style={styles.bodyMuted}>
+            Raw reading from each gas sensor channel. Tap one to see the{' '}
+            {WINDOW_LABEL}.
+          </Text>
+        </View>
+
+        <View style={styles.listCard}>
+          {radarData.map((item, i) => (
+            <Pressable
+              key={item.key}
+              onPress={() => setSelectedSensor(item.key)}
+              accessibilityRole="button"
+              accessibilityLabel={`${sensorTitle(item)}: ${item.value.toFixed(
+                4,
+              )} ${item.unit}. Show plot.`}
+              style={[styles.listRow, i > 0 && styles.listRowBorder]}>
+              <Text style={styles.listName}>{sensorTitle(item)}</Text>
+              <View style={styles.listRight}>
+                <Text style={styles.listValue}>
+                  {item.value.toFixed(4)} {item.unit}
+                </Text>
+                <ChevronIcon />
+              </View>
+            </Pressable>
+          ))}
+        </View>
+      </ScrollView>
+
+      <View style={styles.footer}>
+        <Text style={styles.footerCaption}>
+          {isConnected
+            ? 'Saves a snapshot of the current readings'
+            : 'Connect the e-nose to take a fingerprint'}
+        </Text>
+        <TouchableOpacity
+          style={styles.primaryButton}
+          onPress={isConnected ? handleFingerprint : goToDeviceScreen}
+          accessibilityRole="button"
+          accessibilityLabel={isConnected ? 'Fingerprint' : 'Connect e-nose'}>
+          <Text style={styles.primaryButtonText}>
+            {isConnected ? 'Fingerprint' : 'Connect e-nose'}
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {selectedSensor && (
+        <Modal
+          visible
+          animationType="slide"
+          transparent
+          onRequestClose={() => setSelectedSensor(null)}>
+          <View style={styles.sheetBackdrop}>
+            <Pressable
+              style={styles.sheetDismiss}
+              onPress={() => setSelectedSensor(null)}
+              accessibilityRole="button"
+              accessibilityLabel="Close plot"
+            />
+            <View style={styles.sheet}>
+              <View style={styles.sheetHandle} />
+              <View style={styles.sheetHeader}>
+                <Text style={styles.sheetTitle} accessibilityRole="header">
+                  {selectedDef && sensorTitle(selectedDef)} · {WINDOW_LABEL}
+                </Text>
+                <Pressable
+                  onPress={() => setSelectedSensor(null)}
+                  style={styles.iconButton}
+                  accessibilityRole="button"
+                  accessibilityLabel="Close">
+                  <Text style={styles.closeText}>✕</Text>
+                </Pressable>
+              </View>
+
+              <View style={styles.sheetContent}>
+                <View style={styles.plotCard}>
                   <Svg width={PLOT_WIDTH} height={PLOT_HEIGHT}>
                     <Rect
                       x={0}
                       y={0}
                       width={PLOT_WIDTH}
                       height={PLOT_HEIGHT}
-                      fill="#FAFAFA"
+                      fill={COLORS.bg}
                     />
 
-                    {/* Simple grid - no labels */}
                     {[0, 0.5, 1].map((fraction, i) => (
                       <Line
                         key={`grid-${i}`}
@@ -473,178 +383,194 @@ export default function LiveData() {
                         y1={PLOT_HEIGHT - fraction * (PLOT_HEIGHT - 20)}
                         x2={PLOT_WIDTH}
                         y2={PLOT_HEIGHT - fraction * (PLOT_HEIGHT - 20)}
-                        stroke="#E0E0E0"
+                        stroke={COLORS.border}
                         strokeWidth="1"
                         strokeDasharray={fraction === 0.5 ? '4,4' : '0'}
                       />
                     ))}
 
-                    {/* Plot line */}
                     <Path
                       d={generateMiniPlot(selectedSensor)}
-                      stroke="#2196F3"
+                      stroke={COLORS.line}
                       strokeWidth="2.5"
                       fill="none"
                       strokeLinecap="round"
+                      strokeLinejoin="round"
                     />
                   </Svg>
                 </View>
 
-                <View style={styles.plotInfo}>
-                  <Text style={styles.plotInfoText}>
-                    Current: {currentValues[selectedSensor].toFixed(4)}
+                <View style={styles.currentRow}>
+                  <Text style={styles.bodyMuted}>Current</Text>
+                  <Text style={styles.currentValue}>
+                    {currentValues[selectedSensor].toFixed(4)}{' '}
+                    {selectedDef?.unit}
                   </Text>
                 </View>
               </View>
             </View>
-          </Modal>
-        )}
-      </SafeAreaView>
-    </ScrollView>
+          </View>
+        </Modal>
+      )}
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  scrollView: {
-    backgroundColor: '#fff',
-  },
-  container: {
-    flexGrow: 1,
-    backgroundColor: '#fff',
-  },
-  safeArea: {
-    flex: 1,
+  root: { flex: 1, backgroundColor: COLORS.bg },
+
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    minHeight: 56,
     paddingHorizontal: 20,
   },
-  liveDataSection: {
-    marginTop: 30,
-    alignItems: 'center',
-    paddingBottom: 40,
-  },
-  title: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    marginBottom: 20,
-    color: '#000',
-  },
-  batterySummary: {
-    alignSelf: 'stretch',
-    backgroundColor: '#f5f5f5',
-    borderRadius: 10,
-    marginBottom: 16,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-  },
-  batterySummaryHeader: {
+  headerTitle: { fontSize: 22, fontWeight: '600', color: COLORS.ink },
+  statusPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    gap: 6,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 999,
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.border,
   },
-  batterySummaryLabel: {
-    color: '#333',
-    fontSize: 14,
-    fontWeight: '600',
+  statusDot: { width: 8, height: 8, borderRadius: 4 },
+  statusText: { fontSize: 13, fontWeight: '500', color: COLORS.ink },
+
+  scrollContent: {
+    paddingHorizontal: 16,
+    paddingTop: 4,
+    paddingBottom: 24,
+    gap: 12,
   },
-  slider: {
-    width: '80%',
-    height: 40,
-    marginTop: 16,
-  },
-  sliderLabel: {
-    fontSize: 12,
-    color: '#666',
-    marginTop: 4,
-    marginBottom: 16,
-  },
-  sensorGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+
+  card: {
+    backgroundColor: COLORS.surface,
+    borderRadius: 22,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: COLORS.border,
     gap: 10,
-    marginTop: 20,
-    justifyContent: 'center',
-    maxWidth: width - 40,
   },
-  sensorCell: {
-    width: (width - 60) / 2,
-    backgroundColor: '#e8e8e8',
-    borderRadius: 8,
-    padding: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  sensorLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 4,
-  },
-  sensorValue: {
-    fontSize: 13,
-    color: '#000',
-    fontWeight: '600',
-    marginBottom: 4,
-  },
-  tapHint: {
-    fontSize: 10,
-    color: '#999',
-    fontStyle: 'italic',
-  },
-  analyseButton: {
-    paddingHorizontal: 24,
-    paddingVertical: 10,
-    borderRadius: 20,
-    backgroundColor: '#000',
-    marginVertical: 12,
-  },
-  disabledButton: {
-    opacity: 0.45,
-  },
-  analyseButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '500',
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  plotterModal: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 20,
-    width: width - 40,
-    maxHeight: '80%',
-  },
-  plotterHeader: {
+  cardHeader: {
     flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
+    minHeight: 24,
+  },
+  cardLabel: { fontSize: 15, fontWeight: '600', color: COLORS.ink },
+
+  radarBody: { alignSelf: 'stretch' },
+  chartWrap: { alignItems: 'center', overflow: 'hidden' },
+
+  sectionHead: { gap: 4, marginTop: 8, paddingHorizontal: 4 },
+  sectionTitle: { fontSize: 16, fontWeight: '600', color: COLORS.ink },
+  bodyMuted: { fontSize: 15, lineHeight: 22, color: COLORS.muted },
+
+  listCard: {
+    backgroundColor: COLORS.surface,
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    paddingHorizontal: 16,
+  },
+  listRow: {
+    flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 16,
+    justifyContent: 'space-between',
+    gap: 12,
+    minHeight: 60,
+    paddingVertical: 12,
   },
-  plotterTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#000',
+  listRowBorder: { borderTopWidth: 1, borderTopColor: COLORS.border },
+  listName: { fontSize: 15, fontWeight: '500', color: COLORS.ink },
+  listRight: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  listValue: {
+    fontSize: 13,
+    color: COLORS.muted,
+    fontVariant: ['tabular-nums'],
   },
-  closeButton: {
-    fontSize: 24,
-    color: '#666',
-    fontWeight: '300',
+
+  footer: {
+    paddingTop: 12,
+    paddingHorizontal: 16,
+    paddingBottom: 16,
+    gap: 10,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.border,
+    backgroundColor: COLORS.bg,
   },
-  plotContainer: {
-    marginBottom: 16,
+  footerCaption: { fontSize: 13, color: COLORS.muted, textAlign: 'center' },
+  primaryButton: {
+    height: 54,
+    borderRadius: 999,
+    backgroundColor: COLORS.green,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  plotInfo: {
-    backgroundColor: '#F5F5F5',
+  primaryButtonText: { fontSize: 16, fontWeight: '500', color: '#fff' },
+
+  // Plot sheet
+  sheetBackdrop: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(20,22,20,0.5)',
+  },
+  sheetDismiss: { flex: 1 },
+  sheet: {
+    backgroundColor: COLORS.bg,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    paddingTop: 10,
+    paddingBottom: 24,
+  },
+  sheetHandle: {
+    alignSelf: 'center',
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#d6d8d2',
+    marginBottom: 6,
+  },
+  sheetHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingLeft: 20,
+    paddingRight: 8,
+  },
+  sheetTitle: { fontSize: 18, fontWeight: '600', color: COLORS.ink },
+  iconButton: {
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  closeText: { fontSize: 20, color: COLORS.ink },
+  sheetContent: { padding: 20, gap: 16 },
+  plotCard: {
+    backgroundColor: COLORS.surface,
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: COLORS.border,
     padding: 12,
-    borderRadius: 8,
     alignItems: 'center',
+    overflow: 'hidden',
   },
-  plotInfoText: {
-    fontSize: 14,
-    color: '#333',
+  currentRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 4,
+  },
+  currentValue: {
+    fontSize: 16,
     fontWeight: '600',
+    color: COLORS.ink,
+    fontVariant: ['tabular-nums'],
   },
 });

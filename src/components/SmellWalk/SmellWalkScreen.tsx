@@ -45,6 +45,7 @@ import {
   ENV_SENSOR_DEFINITIONS,
   GAS_SENSOR_DEFINITIONS,
   SENSOR_DEFINITIONS,
+  readSensor,
 } from '../../sensors';
 import {
   ensureFullLocationAccess,
@@ -152,10 +153,9 @@ export default function SmellWalkScreen() {
       let any = false;
 
       SENSOR_DEFINITIONS.forEach(sensor => {
-        const raw = valuesRef.current[sensor.key];
-        const ok = typeof raw === 'number' && Number.isFinite(raw);
-        v[sensor.key] = ok ? raw : null;
-        any = any || ok;
+        const raw = readSensor(valuesRef.current, sensor);
+        v[sensor.key] = raw;
+        any = any || raw !== null;
       });
 
       if (!any) {

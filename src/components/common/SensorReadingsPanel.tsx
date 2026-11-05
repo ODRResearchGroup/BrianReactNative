@@ -1,6 +1,12 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { View, Text, StyleSheet, Dimensions } from 'react-native';
-import CustomRadarChart from './CustomRadarChart';
+import CustomRadarChart, { gasSeries, radarMax } from './CustomRadarChart';
+import {
+  GAS_SENSOR_DEFINITIONS,
+  SensorValues,
+  readSensor,
+  sensorTitle,
+} from '../../sensors';
 
 const { width: screenWidth } = Dimensions.get('window');
 
@@ -12,31 +18,31 @@ const COLORS = {
   muted: '#666963',
 };
 
-export type PanelSensor = {
-  key: string;
-  label: string;
-  value: number;
-};
-
-const UNIT = 'V';
-
 type Props = {
-  sensors: PanelSensor[];
+  readings: SensorValues;
   title?: string;
   emptyText?: string;
 };
 
 export default function SensorReadingsPanel({
-  sensors,
+  readings,
   title = 'Fingerprint',
   emptyText = 'No sensor readings were recorded for this fingerprint.',
 }: Props) {
-  const hasAnyValue = sensors.some(s => s.value !== 0);
+  const rows = useMemo(
+    () =>
+      GAS_SENSOR_DEFINITIONS.map(s => ({
+        ...s,
+        value: readSensor(readings, s) ?? 0,
+      })).sort((a, b) => b.value - a.value),
+    [readings],
+  );
+  const series = useMemo(
+    () => gasSeries('fingerprint-readings', title, readings),
+    [readings, title],
+  );
 
-  const radarValues = sensors.map(s => ({ x: s.label, y: s.value }));
-  const sorted = [...sensors].sort((a, b) => b.value - a.value);
-
-  if (!hasAnyValue) {
+  if (!rows.some(r => r.value !== 0)) {
     return (
       <View style={styles.emptyState}>
         <Text style={styles.emptyTitle}>No readings</Text>
@@ -48,27 +54,16 @@ export default function SensorReadingsPanel({
   return (
     <View style={styles.root}>
       <Text style={styles.bodyMuted}>
-        Each axis shows the raw voltage from one gas sensor channel. The shape
+        Each axis shows the raw reading from one gas sensor channel. The shape
         changes as the sensor array responds to different substances in the air.
       </Text>
 
       <View style={styles.radarCard}>
         <CustomRadarChart
-          data={[
-            {
-              key: 'fingerprint-readings',
-              title,
-              values: radarValues,
-              color: {
-                fill: 'hsla(210, 100%, 50%, 0.35)',
-                stroke: 'hsla(210, 100%, 40%, 1)',
-              },
-            },
-          ]}
+          data={series}
           size={Math.min(screenWidth - 64, 320)}
-          maxValue={Math.max(1, ...radarValues.map(v => v.y))}
+          maxValue={radarMax(series)}
           gridLevels={5}
-          zoomLevel={1}
         />
       </View>
 
@@ -80,18 +75,20 @@ export default function SensorReadingsPanel({
       </View>
 
       <View style={styles.listCard}>
-        {sorted.map((s, i) => (
+        {rows.map((s, i) => (
           <View
             key={s.key}
             accessible
-            accessibilityLabel={`${s.label}: ${s.value.toFixed(2)} ${UNIT}`}
+            accessibilityLabel={`${sensorTitle(s)}: ${s.value.toFixed(2)} ${
+              s.unit
+            }`}
             style={[styles.listRow, i > 0 && styles.listRowBorder]}>
             <View style={styles.listText}>
-              <Text style={styles.listName}>{s.label}</Text>
+              <Text style={styles.listName}>{sensorTitle(s)}</Text>
             </View>
             <View style={styles.listRight}>
               <Text style={styles.caption}>
-                {s.value.toFixed(2)} {UNIT}
+                {s.value.toFixed(2)} {s.unit}
               </Text>
             </View>
           </View>
@@ -100,7 +97,6 @@ export default function SensorReadingsPanel({
     </View>
   );
 }
-
 const styles = StyleSheet.create({
   root: { gap: 20 },
 

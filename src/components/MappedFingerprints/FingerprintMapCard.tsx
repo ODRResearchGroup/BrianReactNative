@@ -1,79 +1,13 @@
 import React, { memo, useState } from 'react';
 import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
-import Svg, { Line, Polygon } from 'react-native-svg';
 import type { SensorRecord } from '../../services/database/db';
-
-const RADAR_FIELDS = [
-  'ch4',
-  'nh3',
-  'hcho',
-  'voc',
-  'odour',
-  'h2s',
-  'etoh',
-  'no2',
-  'co',
-  'smoke',
-  'h2',
-] as const;
+import RecordRadar from '../common/RecordRadar';
 
 const BORDER = '#e4e4df';
 const FOCUS_BORDER = '#0b66c3';
 
 function toImageUri(path: string): string {
   return /^(file|content|https?):\/\//.test(path) ? path : `file://${path}`;
-}
-
-function MiniRadar({ record, size }: { record: SensorRecord; size: number }) {
-  const values = RADAR_FIELDS.map(field => Number(record[field]) || 0);
-  const c = size / 2;
-  const R = size * 0.44;
-  const max = Math.max(1, ...values);
-  const n = values.length;
-
-  const pt = (i: number, f: number) => {
-    const a = -Math.PI / 2 + (i * 2 * Math.PI) / n;
-    return `${(c + R * f * Math.cos(a)).toFixed(1)},${(
-      c +
-      R * f * Math.sin(a)
-    ).toFixed(1)}`;
-  };
-  const ring = (f: number) =>
-    Array.from({ length: n }, (_, i) => pt(i, f)).join(' ');
-
-  return (
-    <Svg width={size} height={size}>
-      <Polygon points={ring(1)} fill="none" stroke="#d3d6d0" strokeWidth={1} />
-      <Polygon
-        points={ring(0.5)}
-        fill="none"
-        stroke="#e1e3de"
-        strokeWidth={1}
-      />
-      {values.map((_, i) => {
-        const [x, y] = pt(i, 1).split(',');
-        return (
-          <Line
-            key={i}
-            x1={c}
-            y1={c}
-            x2={x}
-            y2={y}
-            stroke="#e1e3de"
-            strokeWidth={0.8}
-          />
-        );
-      })}
-      <Polygon
-        points={values.map((v, i) => pt(i, Math.min(1, v / max))).join(' ')}
-        fill="#a9d0ff"
-        fillOpacity={0.75}
-        stroke="#0b66c3"
-        strokeWidth={1.5}
-        strokeLinejoin="round"
-      />
-    </Svg>
-  );
 }
 
 type Props = {
@@ -110,7 +44,7 @@ function FingerprintMapCard({
           {title}
         </Text>
         <View style={styles.row}>
-          <MiniRadar record={record} size={radarSize} />
+          <RecordRadar record={record} size={radarSize} />
           {showImage ? (
             <Image
               source={{ uri: toImageUri(record.photoPath as string) }}

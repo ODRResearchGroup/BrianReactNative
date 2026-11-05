@@ -1,4 +1,10 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 
 import {
   View,
@@ -18,34 +24,6 @@ import {
 
 import SensorReadingsPanel from './SensorReadingsPanel';
 
-const SENSOR_ORDER = [
-  'CH4',
-  'NH3',
-  'HCHO',
-  'VOC',
-  'Odour',
-  'H2S',
-  'Etoh',
-  'NO2',
-  'CO',
-  'Smoke',
-  'H2',
-];
-
-const SENSOR_LABELS = [
-  'Ch4',
-  'NH3',
-  'HCHO',
-  'VOC',
-  'Odour',
-  'H2S',
-  'Etoh',
-  'No2',
-  'CO',
-  'Smoke',
-  'H2',
-];
-
 import AudioRecorderPlayer from 'react-native-audio-recorder-player';
 
 import { useBLE } from '../../BLEUniversal';
@@ -57,13 +35,23 @@ import {
   mkdir,
 } from 'react-native-fs';
 
-import Svg, { Path, Rect, Line, Circle, Polygon } from 'react-native-svg';
+import Svg, { Path, Rect, Line, Circle } from 'react-native-svg';
 
 import useLiveLocation from '../../hooks/useLiveLocation';
 
 import { SensorEvent, emitter } from '../../types/events';
 
-import type { SensorReadings } from '../../types/fingerprintTypes';
+import CustomRadarChart, { gasSeries } from './CustomRadarChart';
+import {
+  EnvSensorKey,
+  SENSOR_DEFINITIONS,
+  SENSOR_UNITS,
+  readAllValues,
+} from '../../sensors';
+import {
+  EMPTY_DELTA_FIELDS,
+  readingsToRecordFields,
+} from '../../sensorRecords';
 
 import CameraModal from './CameraCapture';
 
@@ -84,6 +72,7 @@ import {
 import 'react-native-get-random-values';
 
 import { v4 as uuidv4 } from 'uuid';
+import { SensorReadings } from '../../types/fingerprintTypes';
 
 type MicPhase = 'idle' | 'recording' | 'uploading' | 'processing' | 'error';
 type PlayPhase = 'stopped' | 'playing' | 'paused';
@@ -121,25 +110,6 @@ const COLORS = {
   disabledBg: '#e3e5e0',
   disabledText: '#7d7f79',
   wave: '#b8bdb4',
-};
-
-const developmentReadings: SensorReadings = {
-  CH4: 0.62,
-  NH3: 0.38,
-  HCHO: 0.76,
-  VOC: 0.54,
-  Odour: 0.82,
-  H2S: 0.29,
-  Etoh: 0.68,
-  NO2: 0.46,
-  CO: 0.34,
-  Smoke: 0.57,
-  H2: 0.41,
-  TempC: 21.5,
-  PressureHPa: 1013.2,
-  HumidityPct: 48,
-  AltitudeM: 32,
-  GasResOhm: 12000,
 };
 
 const fmt = (ms: number) => {
@@ -281,57 +251,6 @@ const ChevronIcon = (p: IconProps) => (
   </Icon>
 );
 
-function MiniRadar({ values, size = 56 }: { values: number[]; size?: number }) {
-  const c = size / 2;
-  const R = size * 0.44;
-  const max = Math.max(1, ...values);
-  const n = values.length;
-
-  const pt = (i: number, f: number) => {
-    const a = -Math.PI / 2 + (i * 2 * Math.PI) / n;
-    return `${(c + R * f * Math.cos(a)).toFixed(1)},${(
-      c +
-      R * f * Math.sin(a)
-    ).toFixed(1)}`;
-  };
-  const ring = (f: number) =>
-    Array.from({ length: n }, (_, i) => pt(i, f)).join(' ');
-
-  return (
-    <Svg width={size} height={size}>
-      <Polygon points={ring(1)} fill="none" stroke="#d3d6d0" strokeWidth={1} />
-      <Polygon
-        points={ring(0.5)}
-        fill="none"
-        stroke="#e1e3de"
-        strokeWidth={1}
-      />
-      {values.map((_, i) => {
-        const [x, y] = pt(i, 1).split(',');
-        return (
-          <Line
-            key={i}
-            x1={c}
-            y1={c}
-            x2={x}
-            y2={y}
-            stroke="#e1e3de"
-            strokeWidth={0.8}
-          />
-        );
-      })}
-      <Polygon
-        points={values.map((v, i) => pt(i, Math.min(1, v / max))).join(' ')}
-        fill="#a9d0ff"
-        fillOpacity={0.75}
-        stroke="#0b66c3"
-        strokeWidth={1.5}
-        strokeLinejoin="round"
-      />
-    </Svg>
-  );
-}
-
 function Waveform({
   bars,
   height,
@@ -355,6 +274,23 @@ function Waveform({
     </View>
   );
 }
+
+const DEV_ENV: Record<EnvSensorKey, number> = {
+  TempC: 21.5,
+  PressureHPa: 1013.2,
+  HumidityPct: 48,
+  AltitudeM: 32,
+  GasResOhm: 12000,
+};
+
+const developmentReadings: SensorReadings = Object.fromEntries(
+  SENSOR_DEFINITIONS.map((s, i) => [
+    s.key,
+    s.kind === 'gas'
+      ? 0.3 + ((i * 37) % 50) / 100
+      : DEV_ENV[s.key as EnvSensorKey],
+  ]),
+) as SensorReadings;
 
 export default function FingerprintModal({
   visible,
@@ -416,55 +352,16 @@ export default function FingerprintModal({
 
   const createFingerprint = useCallback((): SensorEvent => {
     const hasSensorReadings = Object.keys(characteristicValues).length > 0;
-
     const readings =
       __DEV__ && !hasSensorReadings
         ? developmentReadings
-        : {
-            CH4: characteristicValues.Methane || 0,
-            NH3: characteristicValues.Ammonia || 0,
-            HCHO: characteristicValues.Formaldehyde || 0,
-            VOC:
-              characteristicValues['Volatile Organic Compounds'] ??
-              characteristicValues['Voletile Organic Compounds'] ??
-              0,
-            Odour: characteristicValues.Odor || 0,
-            H2S: characteristicValues['Hydrogen Sulfide'] || 0,
-            Etoh: characteristicValues.Ethanol || 0,
-            NO2: characteristicValues['Nitrogen Dioxide'] || 0,
-            CO:
-              characteristicValues['Carbon Monoxide'] ??
-              characteristicValues.CO ??
-              0,
-            Smoke: characteristicValues.Smoke || 0,
-            H2: characteristicValues.Hydrogen ?? characteristicValues.H2 ?? 0,
-            TempC: characteristicValues.Temperature || 0,
-            PressureHPa: characteristicValues.Pressure || 0,
-            HumidityPct: characteristicValues.Humidity || 0,
-            AltitudeM: characteristicValues.Altitude || 0,
-            GasResOhm: characteristicValues['Gas Resistance'] || 0,
-          };
+        : readAllValues(characteristicValues);
 
     return {
       type: 'sensor_reading',
       timestamp: new Date(),
       source: 'BLE Device',
-      olfactoryData: {
-        readings,
-        units: {
-          CH4: 'ppm',
-          NH3: 'ppm',
-          HCHO: 'ppm',
-          VOC: 'ppm',
-          Odour: 'a.u.',
-          H2S: 'ppm',
-          Etoh: 'ppm',
-          NO2: 'ppm',
-          CO: 'ppm',
-          Smoke: 'ppm',
-          H2: 'ppm',
-        },
-      },
+      olfactoryData: { readings, units: SENSOR_UNITS },
     };
   }, [characteristicValues]);
 
@@ -820,32 +717,9 @@ export default function FingerprintModal({
         longitude: location?.longitude ?? null,
         accuracyM: null,
 
-        ch4: r.CH4 ?? null,
-        nh3: r.NH3 ?? null,
-        hcho: r.HCHO ?? null,
-        voc: r.VOC ?? null,
-        odour: r.Odour ?? null,
-        h2s: r.H2S ?? null,
-        etoh: r.Etoh ?? null,
-        no2: r.NO2 ?? null,
+        ...readingsToRecordFields(r),
+        ...EMPTY_DELTA_FIELDS,
 
-        co: null,
-        smoke: null,
-        h2: null,
-        temperature: null,
-        pressure: null,
-        humidity: null,
-        altitude: null,
-        bme680GasResistance: null,
-
-        deltaCh4: null,
-        deltaNh3: null,
-        deltaHcho: null,
-        deltaVoc: null,
-        deltaOdour: null,
-        deltaH2s: null,
-        deltaEtoh: null,
-        deltaNo2: null,
         influxStatus: 'pending',
         influxSyncedAt: null,
         influxLastError: null,
@@ -1103,15 +977,19 @@ export default function FingerprintModal({
   const hasAudio = audioMeta !== null;
   const voiceAdded = hasAudio && !isRecording && !isUploading;
 
-  const readings = (capturedFingerprint?.olfactoryData?.readings ??
-    {}) as Record<string, number>;
-  const radarValues = SENSOR_ORDER.map(key => Number(readings[key]) || 0);
+  const readings = useMemo(
+    () =>
+      (capturedFingerprint?.olfactoryData?.readings ?? {}) as Record<
+        string,
+        number
+      >,
+    [capturedFingerprint?.olfactoryData?.readings],
+  );
 
-  const panelSensors = SENSOR_ORDER.map((key, idx) => ({
-    key,
-    label: SENSOR_LABELS[idx],
-    value: radarValues[idx],
-  }));
+  const radar = useMemo(
+    () => gasSeries('capture', title || 'Fingerprint', readings),
+    [readings, title],
+  );
 
   const attachmentParts: string[] = [];
   if (hasAudio) {
@@ -1225,12 +1103,16 @@ export default function FingerprintModal({
               <View style={styles.card}>
                 <View style={styles.summaryRow}>
                   <View style={styles.miniRadarBox}>
-                    <MiniRadar values={radarValues} />
+                    <CustomRadarChart
+                      variant="compact"
+                      size={56}
+                      data={radar}
+                    />
                   </View>
 
                   <View style={styles.summaryText}>
                     <Text style={styles.summaryTitle}>
-                      Fingerprint · 11 sensors
+                      Fingerprint · {SENSOR_DEFINITIONS.length} sensors
                     </Text>
                     <Text style={styles.summarySub}>
                       {capturedLabel(capturedFingerprint?.timestamp)}
@@ -1260,7 +1142,7 @@ export default function FingerprintModal({
 
               {showChart && capturedFingerprint && (
                 <SensorReadingsPanel
-                  sensors={panelSensors}
+                  readings={readings}
                   title={title || 'Fingerprint'}
                   emptyText="Make sure the e-nose is connected and switched on. Readings appear here within a few seconds."
                 />
