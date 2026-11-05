@@ -225,3 +225,41 @@ export function isBoardStatusBitSet(status: number, bit: number): boolean {
   // eslint-disable-next-line no-bitwise
   return (status & (1 << bit)) !== 0;
 }
+
+export const SENSOR_UNITS = Object.fromEntries(
+  SENSOR_DEFINITIONS.map(s => [s.key, s.unit]),
+) as Record<SensorKey, string>;
+
+export type SensorValues = Record<string, number | null | undefined>;
+
+export function readSensor(
+  values: SensorValues,
+  sensor: { key: string; label: string },
+): number | null {
+  const raw = values[sensor.key] ?? values[sensor.label];
+  return typeof raw === 'number' && Number.isFinite(raw) ? raw : null;
+}
+
+export function readGasValues(values: SensorValues) {
+  return Object.fromEntries(
+    GAS_SENSOR_DEFINITIONS.map(s => [s.key, readSensor(values, s) ?? 0]),
+  ) as Record<GasSensorKey, number>;
+}
+
+export function readAllValues(values: SensorValues) {
+  return Object.fromEntries(
+    SENSOR_DEFINITIONS.map(s => [s.key, readSensor(values, s) ?? 0]),
+  ) as Record<SensorKey, number>;
+}
+
+export const sensorTitle = (s: { label: string; chartLabel: string }) => {
+  if (s.label.toLowerCase() === s.chartLabel.toLowerCase()) {
+    return s.label;
+  }
+
+  if (s.chartLabel === 'VOC') {
+    return s.label;
+  }
+
+  return `${s.label} (${s.chartLabel})`;
+};

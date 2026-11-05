@@ -1,5 +1,5 @@
 import { Pressable, View, Text, StyleSheet } from 'react-native';
-import CustomRadarChart from '../../common/CustomRadarChart';
+import CustomRadarChart, { radarSeries } from '../../common/CustomRadarChart';
 import { COLORS } from '../consts';
 import { SensorAnalysis } from '../types';
 import WaitIcon from './icons/WaitIcon';
@@ -13,14 +13,13 @@ export default function InlineRadar({
   hasData: boolean;
   onPress: () => void;
 }) {
+  const series = radarSeries(
+    'live',
+    'Live',
+    sensors.map(s => ({ x: s.label, y: s.current ?? 0 })),
+  );
+
   const RADAR_SIZE = 128;
-
-  const radarValues = sensors.map(s => ({
-    x: s.label,
-    y: s.current ?? 0,
-  }));
-
-  const maxVal = Math.max(1, ...radarValues.map(v => v.y));
 
   return (
     <Pressable
@@ -32,24 +31,7 @@ export default function InlineRadar({
         pressed && styles.pressed,
       ]}>
       {hasData ? (
-        <CustomRadarChart
-          data={[
-            {
-              key: 'live',
-              title: 'Live',
-              values: radarValues,
-              color: {
-                fill: 'hsla(210, 100%, 50%, 0.25)',
-                stroke: 'hsla(210, 100%, 40%, 1)',
-              },
-            },
-          ]}
-          size={RADAR_SIZE}
-          maxValue={maxVal}
-          gridLevels={3}
-          zoomLevel={1}
-          hideLabels
-        />
+        <CustomRadarChart data={series} size={RADAR_SIZE} variant="compact" />
       ) : (
         <View style={styles.inlineRadarEmpty}>
           <WaitIcon size={18} color={COLORS.muted} />

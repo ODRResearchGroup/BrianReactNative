@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, StyleSheet } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import Svg, {
   Polygon,
   Line,
@@ -7,207 +7,187 @@ import Svg, {
   G,
   Circle,
 } from 'react-native-svg';
+import {
+  GAS_SENSOR_DEFINITIONS,
+  SensorValues,
+  readSensor,
+} from '../../sensors';
 
-type RadarDataPoint = {
-  x: string;
-  y: number;
+export type RadarPoint = { x: string; y: number };
+export type RadarSeries = {
+  key: string;
+  title: string;
+  values: RadarPoint[];
+  color: { fill: string; stroke: string };
 };
 
-type RadarChartProps = {
-  data: Array<{
-    key: string;
-    title: string;
-    values: RadarDataPoint[];
-    color: { fill: string; stroke: string };
-  }>;
+export const LIVE_COLOR = {
+  fill: 'hsla(210, 100%, 50%, 0.35)',
+  stroke: 'hsla(210, 100%, 40%, 1)',
+};
+
+export const seriesColor = (index: number) => {
+  const hue = (index * 137.508) % 360;
+  return {
+    fill: `hsla(${hue}, 80%, 65%, 0.35)`,
+    stroke: `hsla(${hue}, 85%, 45%, 1)`,
+  };
+};
+
+export const radarSeries = (
+  key: string,
+  title: string,
+  values: RadarPoint[],
+  color = LIVE_COLOR,
+): RadarSeries[] => [{ key, title, values, color }];
+
+export const gasSeries = (
+  key: string,
+  title: string,
+  values: SensorValues,
+  color = LIVE_COLOR,
+): RadarSeries[] =>
+  radarSeries(
+    key,
+    title,
+    GAS_SENSOR_DEFINITIONS.map(s => ({
+      x: s.chartLabel,
+      y: readSensor(values, s) ?? 0,
+    })),
+    color,
+  );
+
+export const radarMax = (series: RadarSeries[], floor = 1) =>
+  Math.max(floor, ...series.flatMap(s => s.values.map(v => v.y)));
+
+type Props = {
+  data: RadarSeries[];
   size?: number;
   maxValue?: number;
-  zoomLevel?: number;
   gridLevels?: number;
-  /** Extra padding (px) around the chart area so labels aren't clipped.
-   *  Defaults to 28 for the full-size chart, pass a smaller value for
-   *  compact inline views where labels are suppressed. */
-  labelPadding?: number;
-  /** When true, axis labels are hidden (useful for small inline views). */
-  hideLabels?: boolean;
+  variant?: 'full' | 'compact';
 };
 
-const CustomRadarChart: React.FC<RadarChartProps> = ({
+export default function CustomRadarChart({
   data,
   size = 300,
-  maxValue = 5,
-  gridLevels = 4,
-  zoomLevel = 1,
-  hideLabels,
-}) => {
-  const centerX = size / 2;
-  const centerY = size / 2;
-  const maxRadius = (size / 2) * 0.75; // Leave space for labels
-  const numAxes = data[0]?.values.length || 8;
-  const angleStep = (2 * Math.PI) / numAxes;
+  maxValue,
+  gridLevels,
+  variant = 'full',
+}: Props) {
+  const compact = variant === 'compact';
+  const axes = data[0]?.values ?? [];
+  const n = axes.length;
+  if (n < 3) {
+    return null;
+  }
 
-  // Convert polar coordinates to cartesian
-  const polarToCartesian = (
-    radius: number,
-    angleIndex: number,
-  ): { x: number; y: number } => {
-    const angle = angleIndex * angleStep - Math.PI / 2; // Start from top
-    return {
-      x: centerX + radius * Math.cos(angle),
-      y: centerY + radius * Math.sin(angle),
-    };
+  const max = maxValue && maxValue > 0 ? maxValue : radarMax(data);
+  const levels = gridLevels ?? (compact ? 2 : 4);
+  const c = size / 2;
+  const maxR = c * (compact ? 0.92 : 0.75);
+  const step = (2 * Math.PI) / n;
+
+  const polar = (r: number, i: number) => {
+    const a = i * step - Math.PI / 2;
+    return { x: c + r * Math.cos(a), y: c + r * Math.sin(a) };
   };
-
-  // Generate grid circles (concentric polygons)
-  const generateGridPolygons = () => {
-    const polygons = [];
-    for (let level = 1; level <= gridLevels; level++) {
-      const radius = (maxRadius / gridLevels) * level;
-      const points: string[] = [];
-
-      for (let i = 0; i < numAxes; i++) {
-        const point = polarToCartesian(radius, i);
-        points.push(`${point.x},${point.y}`);
-      }
-
-      polygons.push(
-        <Polygon
-          key={`grid-${level}`}
-          points={points.join(' ')}
-          fill="none"
-          stroke="#e0e0e0"
-          strokeWidth="1"
-        />,
-      );
-    }
-    return polygons;
-  };
-
-  // Generate axes lines
-  const generateAxes = () => {
-    const axes = [];
-    for (let i = 0; i < numAxes; i++) {
-      const endPoint = polarToCartesian(maxRadius, i);
-      axes.push(
-        <Line
-          key={`axis-${i}`}
-          x1={centerX}
-          y1={centerY}
-          x2={endPoint.x}
-          y2={endPoint.y}
-          stroke="#d0d0d0"
-          strokeWidth="1"
-        />,
-      );
-    }
-    return axes;
-  };
-
-  // Generate axis labels
-  const generateLabels = () => {
-    if (hideLabels) {
-      return;
-    }
-
-    const labels = [];
-    const labelOffset = 25;
-
-    for (let i = 0; i < numAxes; i++) {
-      const labelPos = polarToCartesian(maxRadius + labelOffset, i);
-      const labelText = data[0]?.values[i]?.x || '';
-
-      labels.push(
-        <SvgText
-          key={`label-${i}`}
-          x={labelPos.x}
-          y={labelPos.y}
-          fill="#333"
-          fontSize="10"
-          fontWeight="600"
-          textAnchor="middle"
-          alignmentBaseline="middle">
-          {labelText}
-        </SvgText>,
-      );
-    }
-    return labels;
-  };
-
-  // Convert data values to polygon points
-  const generateDataPolygon = (values: RadarDataPoint[]) => {
-    const points: string[] = [];
-
-    values.forEach((dataPoint, index) => {
-      const normalizedValue = Math.min(dataPoint.y, maxValue);
-      const radius = (normalizedValue / maxValue) * maxRadius * zoomLevel; // <-- FIX
-      const point = polarToCartesian(radius, index);
-      points.push(`${point.x},${point.y}`);
-    });
-
-    return points.join(' ');
-  };
-
-  // Generate data point circles (optional - for interactive highlighting)
-  const generateDataPoints = (values: RadarDataPoint[], color: string) => {
-    return values.map((dataPoint, index) => {
-      const normalizedValue = Math.min(dataPoint.y, maxValue);
-      const radius = (normalizedValue / maxValue) * maxRadius * zoomLevel;
-
-      const point = polarToCartesian(radius, index);
-
-      return (
-        <Circle
-          key={`point-${index}`}
-          cx={point.x}
-          cy={point.y}
-          r="3"
-          fill={color}
-          stroke="white"
-          strokeWidth="1.5"
-        />
-      );
-    });
-  };
+  const ring = (r: number) =>
+    axes
+      .map((_, i) => {
+        const p = polar(r, i);
+        return `${p.x},${p.y}`;
+      })
+      .join(' ');
+  const radiusOf = (v: number) => (Math.min(Math.max(v, 0), max) / max) * maxR;
 
   return (
-    <View style={styles.container}>
+    <View style={styles.chart}>
       <Svg width={size} height={size}>
         <G>
-          {/* Background grid */}
-          {generateGridPolygons()}
+          {Array.from({ length: levels }, (_, l) => (
+            <Polygon
+              key={`grid-${l}`}
+              points={ring((maxR / levels) * (l + 1))}
+              fill="none"
+              stroke={compact ? '#e1e3de' : '#e0e0e0'}
+              strokeWidth={1}
+            />
+          ))}
 
-          {/* Axes */}
-          {generateAxes()}
+          {axes.map((_, i) => {
+            const p = polar(maxR, i);
+            return (
+              <Line
+                key={`axis-${i}`}
+                x1={c}
+                y1={c}
+                x2={p.x}
+                y2={p.y}
+                stroke={compact ? '#e1e3de' : '#d0d0d0'}
+                strokeWidth={compact ? 0.8 : 1}
+              />
+            );
+          })}
 
-          {/* Data overlays - render in reverse so first item is on top */}
           {data
             .slice()
             .reverse()
-            .map(dataset => (
-              <G key={dataset.key}>
+            .map(s => (
+              <G key={s.key}>
                 <Polygon
-                  points={generateDataPolygon(dataset.values)}
-                  fill={dataset.color.fill}
-                  stroke={dataset.color.stroke}
-                  strokeWidth="2"
+                  points={s.values
+                    .map((v, i) => {
+                      const p = polar(radiusOf(v.y), i);
+                      return `${p.x},${p.y}`;
+                    })
+                    .join(' ')}
+                  fill={s.color.fill}
+                  stroke={s.color.stroke}
+                  strokeWidth={compact ? 1.5 : 2}
+                  strokeLinejoin="round"
                 />
-                {generateDataPoints(dataset.values, dataset.color.stroke)}
+                {!compact &&
+                  s.values.map((v, i) => {
+                    const p = polar(radiusOf(v.y), i);
+                    return (
+                      <Circle
+                        key={`pt-${i}`}
+                        cx={p.x}
+                        cy={p.y}
+                        r={3}
+                        fill={s.color.stroke}
+                        stroke="white"
+                        strokeWidth={1.5}
+                      />
+                    );
+                  })}
               </G>
             ))}
 
-          {/* Labels on top */}
-          {generateLabels()}
+          {!compact &&
+            axes.map((a, i) => {
+              const p = polar(maxR + 25, i);
+              return (
+                <SvgText
+                  key={`label-${i}`}
+                  x={p.x}
+                  y={p.y}
+                  fill="#333"
+                  fontSize="10"
+                  fontWeight="600"
+                  textAnchor="middle"
+                  alignmentBaseline="middle">
+                  {a.x}
+                </SvgText>
+              );
+            })}
         </G>
       </Svg>
     </View>
   );
-};
+}
 
 const styles = StyleSheet.create({
-  container: {
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+  chart: { alignItems: 'center', justifyContent: 'center' },
 });
-
-export default CustomRadarChart;

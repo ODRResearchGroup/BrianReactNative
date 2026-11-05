@@ -7,10 +7,10 @@ import {
   ScrollView,
   StyleSheet,
 } from 'react-native';
-import CustomRadarChart from '../../common/CustomRadarChart';
-import { COLORS } from '../consts';
+import CustomRadarChart, { radarSeries } from '../../common/CustomRadarChart';
+import { COLORS, MAX_POINTS, SAMPLE_MS } from '../consts';
 import { SensorAnalysis } from '../types';
-import { trendArrow } from '../utils';
+import { agoLabel, trendArrow } from '../utils';
 import WaitIcon from './icons/WaitIcon';
 import LevelBadge from './LevelBadge';
 
@@ -27,12 +27,13 @@ export default function SensorSheet({
   ready: boolean;
   screenWidth: number;
 }) {
-  const hasAnyValue = sensors.some(s => s.current !== null);
+  const series = radarSeries(
+    'live',
+    'Live',
+    sensors.map(s => ({ x: s.label, y: s.current ?? 0 })),
+  );
 
-  const radarValues = sensors.map(s => ({
-    x: s.label,
-    y: s.current ?? 0,
-  }));
+  const hasAnyValue = sensors.some(s => s.current !== null);
 
   const sorted = [...sensors].sort((a, b) => (b.level ?? -1) - (a.level ?? -1));
 
@@ -81,28 +82,18 @@ export default function SensorSheet({
             ) : (
               <>
                 <Text style={styles.bodyMuted}>
-                  Each axis shows the raw voltage from one gas sensor channel.
-                  The shape changes as the sensor array responds to different
-                  substances in the air.
+                  {ready
+                    ? `Relative signal level compared with the last ${agoLabel(
+                        (MAX_POINTS - 1) * (SAMPLE_MS / 1000),
+                      )} of this walk.`
+                    : 'Collecting baseline readings — comparisons available shortly.'}
                 </Text>
 
                 <View style={styles.radarCard}>
                   <CustomRadarChart
-                    data={[
-                      {
-                        key: 'live',
-                        title: 'Live',
-                        values: radarValues,
-                        color: {
-                          fill: 'hsla(210, 100%, 50%, 0.35)',
-                          stroke: 'hsla(210, 100%, 40%, 1)',
-                        },
-                      },
-                    ]}
+                    data={series}
                     size={Math.min(screenWidth - 64, 320)}
-                    maxValue={Math.max(1, ...radarValues.map(v => v.y))}
                     gridLevels={5}
-                    zoomLevel={1}
                   />
                 </View>
 

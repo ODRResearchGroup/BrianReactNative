@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -9,30 +9,10 @@ import {
   SafeAreaView,
 } from 'react-native';
 import { MapView, Camera, ShapeSource, CircleLayer } from '@rnmapbox/maps';
-import Svg, { Path, Line, Polygon } from 'react-native-svg';
+import Svg, { Path } from 'react-native-svg';
 import SensorReadingsPanel from './SensorReadingsPanel';
 import type { SavedFingerprintData } from '../../types/fingerprintTypes';
-
-const SENSOR_ORDER = [
-  'CH4',
-  'NH3',
-  'HCHO',
-  'VOC',
-  'Odour',
-  'H2S',
-  'Etoh',
-  'NO2',
-];
-const SENSOR_LABELS = [
-  'Ch4',
-  'NH3',
-  'HCHO',
-  'VOC',
-  'Odour',
-  'H2S',
-  'Etoh',
-  'No2',
-];
+import CustomRadarChart, { gasSeries } from './CustomRadarChart';
 
 const COLORS = {
   bg: '#f6f6f3',
@@ -78,57 +58,6 @@ const ChevronIcon = ({ size = 18, color = COLORS.green }) => (
   </Svg>
 );
 
-function MiniRadar({ values, size = 56 }: { values: number[]; size?: number }) {
-  const c = size / 2;
-  const R = size * 0.44;
-  const max = Math.max(1, ...values);
-  const n = values.length;
-
-  const pt = (i: number, f: number) => {
-    const a = -Math.PI / 2 + (i * 2 * Math.PI) / n;
-    return `${(c + R * f * Math.cos(a)).toFixed(1)},${(
-      c +
-      R * f * Math.sin(a)
-    ).toFixed(1)}`;
-  };
-  const ring = (f: number) =>
-    Array.from({ length: n }, (_, i) => pt(i, f)).join(' ');
-
-  return (
-    <Svg width={size} height={size}>
-      <Polygon points={ring(1)} fill="none" stroke="#d3d6d0" strokeWidth={1} />
-      <Polygon
-        points={ring(0.5)}
-        fill="none"
-        stroke="#e1e3de"
-        strokeWidth={1}
-      />
-      {values.map((_, i) => {
-        const [x, y] = pt(i, 1).split(',');
-        return (
-          <Line
-            key={i}
-            x1={c}
-            y1={c}
-            x2={x}
-            y2={y}
-            stroke="#e1e3de"
-            strokeWidth={0.8}
-          />
-        );
-      })}
-      <Polygon
-        points={values.map((v, i) => pt(i, Math.min(1, v / max))).join(' ')}
-        fill="#a9d0ff"
-        fillOpacity={0.75}
-        stroke="#0b66c3"
-        strokeWidth={1.5}
-        strokeLinejoin="round"
-      />
-    </Svg>
-  );
-}
-
 interface FingerprintDetailViewProps {
   data: SavedFingerprintData;
   onBack: () => void;
@@ -144,17 +73,19 @@ export default function FingerprintDetailView({
 
   const title = data.fingerprintTitle?.title?.trim() || '';
   const description = data.humanDescription?.description?.trim() || '';
-  const readings = (data.fingerprint?.olfactoryData?.readings ?? {}) as Record<
-    string,
-    number
-  >;
-  const values = SENSOR_ORDER.map(key => Number(readings[key]) || 0);
+  const readings = useMemo(
+    () =>
+      (data.fingerprint?.olfactoryData?.readings ?? {}) as Record<
+        string,
+        number
+      >,
+    [data.fingerprint?.olfactoryData?.readings],
+  );
 
-  const sensors = SENSOR_ORDER.map((key, idx) => ({
-    key,
-    label: SENSOR_LABELS[idx],
-    value: values[idx],
-  }));
+  const radar = useMemo(
+    () => gasSeries('detail', title || 'Fingerprint', readings),
+    [readings, title],
+  );
 
   return (
     <SafeAreaView style={styles.root}>
@@ -176,7 +107,7 @@ export default function FingerprintDetailView({
         <View style={styles.card}>
           <View style={styles.summaryRow}>
             <View style={styles.miniRadarBox}>
-              <MiniRadar values={values} />
+              <CustomRadarChart variant="compact" size={56} data={radar} />
             </View>
             <View style={styles.summaryText}>
               <Text style={styles.summaryTitle} numberOfLines={1}>
@@ -208,7 +139,7 @@ export default function FingerprintDetailView({
 
         {showChart && (
           <SensorReadingsPanel
-            sensors={sensors}
+            readings={readings}
             title={title || 'Fingerprint'}
           />
         )}

@@ -1,15 +1,14 @@
 import 'react-native-gesture-handler';
 import React, { useEffect } from 'react';
-import { AppState, ImageBackground, StyleSheet } from 'react-native';
+import { AppState, ImageBackground, StatusBar, StyleSheet } from 'react-native';
 import NetInfo from '@react-native-community/netinfo';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { Bluetooth, Home, MapPinned } from 'lucide-react-native';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { BLEProvider } from './BLEUniversal';
-import Analysis from './components/Analysis/Analysis';
 import { BaselineProvider } from './components/common/BaselineContext';
 import FingerprintsHistory from './components/FingerprintsHistory/FingerprintsHistory';
 import LiveData from './components/LiveData/LiveData';
@@ -80,7 +79,6 @@ function DataStack() {
       <Stack.Screen name="LiveData" component={LiveData} />
       <Stack.Screen name="SmellWalk" component={SmellWalkScreen} />
       <Stack.Screen name="History" component={FingerprintsHistory} />
-      <Stack.Screen name="Analysis" component={Analysis} />
       <Stack.Screen name="AnnotationFeed" component={AnnotationFeed} />
       <Stack.Screen name="AddAnnotation" component={AddAnnotationScreen} />
       <Stack.Screen name="AudioAnnotation" component={AudioAnnotationScreen} />
@@ -97,7 +95,7 @@ function DataStack() {
 export default function App() {
   useEffect(() => {
     Mapbox.setAccessToken(Config.MAPBOX_PUBLIC_TOKEN ?? '');
-  });
+  }, []);
 
   useEffect(() => {
     runSyncWorker().catch(() => {});
@@ -129,35 +127,38 @@ export default function App() {
         <BaselineProvider>
           <GestureHandlerRootView style={styles.root}>
             <SafeAreaProvider>
-              <ImageBackground
-                source={require('./pics/background.jpg')}
-                style={styles.background}
-                imageStyle={styles.backgroundImage}>
-                <NavigationContainer>
-                  <Tab.Navigator
-                    initialRouteName="Home"
-                    screenOptions={{
-                      headerShown: false,
-                      sceneStyle: { backgroundColor: 'transparent' },
-                    }}>
-                    <Tab.Screen
-                      name="Home"
-                      component={DataStack}
-                      options={{ tabBarIcon: renderHomeIcon }}
-                    />
-                    <Tab.Screen
-                      name="Device"
-                      component={BLEScreen}
-                      options={{ tabBarIcon: renderDeviceIcon }}
-                    />
-                    <Tab.Screen
-                      name="Map"
-                      component={MappedFingerprints}
-                      options={{ tabBarIcon: renderMapIcon }}
-                    />
-                  </Tab.Navigator>
-                </NavigationContainer>
-              </ImageBackground>
+              <StatusBar barStyle="light-content" />
+              <SafeAreaView style={styles.safe} edges={['top']}>
+                <ImageBackground
+                  source={require('./pics/background.jpg')}
+                  style={styles.background}
+                  imageStyle={styles.backgroundImage}>
+                  <NavigationContainer>
+                    <Tab.Navigator
+                      initialRouteName="Home"
+                      screenOptions={{
+                        headerShown: false,
+                        sceneStyle: { backgroundColor: 'transparent' },
+                      }}>
+                      <Tab.Screen
+                        name="Home"
+                        component={DataStack}
+                        options={{ tabBarIcon: renderHomeIcon }}
+                      />
+                      <Tab.Screen
+                        name="Device"
+                        component={BLEScreen}
+                        options={{ tabBarIcon: renderDeviceIcon }}
+                      />
+                      <Tab.Screen
+                        name="Map"
+                        component={MappedFingerprints}
+                        options={{ tabBarIcon: renderMapIcon }}
+                      />
+                    </Tab.Navigator>
+                  </NavigationContainer>
+                </ImageBackground>
+              </SafeAreaView>
             </SafeAreaProvider>
           </GestureHandlerRootView>
         </BaselineProvider>
@@ -168,6 +169,7 @@ export default function App() {
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
+  safe: { flex: 1, backgroundColor: '#1f5c3f' },
   background: { flex: 1, width: '100%', height: '100%' },
   backgroundImage: { resizeMode: 'cover' },
 });
