@@ -4,23 +4,21 @@ import { AppState, ImageBackground, StatusBar, StyleSheet } from 'react-native';
 import NetInfo from '@react-native-community/netinfo';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { NavigationContainer } from '@react-navigation/native';
-import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { Bluetooth, Home, MapPinned } from 'lucide-react-native';
+import {
+  Bluetooth,
+  Bookmark,
+  FingerprintPattern,
+  Footprints,
+  MapPinned,
+} from 'lucide-react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { BLEProvider } from './BLEUniversal';
 import { BaselineProvider } from './components/common/BaselineContext';
 import FingerprintsHistory from './components/FingerprintsHistory/FingerprintsHistory';
 import LiveData from './components/LiveData/LiveData';
 import MappedFingerprints from './components/MappedFingerprints/MappedFingerprints';
-import AddAnnotationScreen from './components/AddAnnotation/AddAnnotationScreen';
-import AnnotationFeed from './components/AnnotationFeed/AnnotationFeed';
-import AudioAnnotationScreen from './components/AudioAnnotation/AudioAnnotationScreen';
 import BLEScreen from './components/BLE/BLEScreen';
-import DataDisplay from './components/DataDisplay/DataDisplay';
-import EditAnnotationTagsScreen from './components/EditAnnotationTags/EditAnnotationTagsScreen';
-import PhotoAnnotationScreen from './components/PhotoAnnotation/PhotoAnnotationScreen';
-import ShootPicScreen from './components/ShootPic/ShootPicScreen';
 import SmellWalkScreen from './components/SmellWalk/SmellWalkScreen';
 import { InfluxDBProvider } from './services/influx/InfluxDBService';
 import { runSyncWorker } from './services/sync/syncWorker';
@@ -56,11 +54,7 @@ export type RootStackParamList = {
 };
 
 const Tab = createBottomTabNavigator();
-const Stack = createNativeStackNavigator<RootStackParamList>();
 
-const renderHomeIcon = ({ color, size }: { color: string; size: number }) => (
-  <Home color={color} size={size} />
-);
 const renderDeviceIcon = ({ color, size }: { color: string; size: number }) => (
   <Bluetooth color={color} size={size} />
 );
@@ -68,29 +62,21 @@ const renderMapIcon = ({ color, size }: { color: string; size: number }) => (
   <MapPinned color={color} size={size} />
 );
 
-function DataStack() {
-  return (
-    <Stack.Navigator
-      screenOptions={{
-        headerShown: false,
-        contentStyle: { backgroundColor: 'transparent' },
-      }}>
-      <Stack.Screen name="DataHome" component={DataDisplay} />
-      <Stack.Screen name="LiveData" component={LiveData} />
-      <Stack.Screen name="SmellWalk" component={SmellWalkScreen} />
-      <Stack.Screen name="History" component={FingerprintsHistory} />
-      <Stack.Screen name="AnnotationFeed" component={AnnotationFeed} />
-      <Stack.Screen name="AddAnnotation" component={AddAnnotationScreen} />
-      <Stack.Screen name="AudioAnnotation" component={AudioAnnotationScreen} />
-      <Stack.Screen name="ShootPic" component={ShootPicScreen} />
-      <Stack.Screen name="PhotoAnnotation" component={PhotoAnnotationScreen} />
-      <Stack.Screen
-        name="EditAnnotationTags"
-        component={EditAnnotationTagsScreen}
-      />
-    </Stack.Navigator>
-  );
-}
+const renderFingerprintIcon = ({
+  color,
+  size,
+}: {
+  color: string;
+  size: number;
+}) => <FingerprintPattern color={color} size={size} />;
+
+const renderWalkIcon = ({ color, size }: { color: string; size: number }) => (
+  <Footprints color={color} size={size} />
+);
+
+const renderSavedIcon = ({ color, size }: { color: string; size: number }) => (
+  <Bookmark color={color} size={size} />
+);
 
 export default function App() {
   useEffect(() => {
@@ -135,25 +121,35 @@ export default function App() {
                   imageStyle={styles.backgroundImage}>
                   <NavigationContainer>
                     <Tab.Navigator
-                      initialRouteName="Home"
+                      initialRouteName="Fingerprint"
                       screenOptions={{
                         headerShown: false,
                         sceneStyle: { backgroundColor: 'transparent' },
                       }}>
                       <Tab.Screen
-                        name="Home"
-                        component={DataStack}
-                        options={{ tabBarIcon: renderHomeIcon }}
+                        name="Fingerprint"
+                        component={LiveData}
+                        options={{ tabBarIcon: renderFingerprintIcon }}
                       />
                       <Tab.Screen
-                        name="Device"
-                        component={BLEScreen}
-                        options={{ tabBarIcon: renderDeviceIcon }}
+                        name="Smell Walk"
+                        component={SmellWalkScreen}
+                        options={{ tabBarIcon: renderWalkIcon }}
+                      />
+                      <Tab.Screen
+                        name="Saved"
+                        component={FingerprintsHistory}
+                        options={{ tabBarIcon: renderSavedIcon }}
                       />
                       <Tab.Screen
                         name="Map"
                         component={MappedFingerprints}
                         options={{ tabBarIcon: renderMapIcon }}
+                      />
+                      <Tab.Screen
+                        name="Device"
+                        component={BLEScreen}
+                        options={{ tabBarIcon: renderDeviceIcon }}
                       />
                     </Tab.Navigator>
                   </NavigationContainer>
