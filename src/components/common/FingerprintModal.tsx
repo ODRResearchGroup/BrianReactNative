@@ -13,15 +13,10 @@ import {
   Platform,
   ScrollView,
   SafeAreaView,
-  Dimensions,
   ActivityIndicator,
 } from 'react-native';
 
-import CustomRadarChart from './CustomRadarChart';
-
-import Slider from '@react-native-community/slider';
-
-const { width } = Dimensions.get('window');
+import SensorReadingsPanel from './SensorReadingsPanel';
 
 const SENSOR_ORDER = [
   'CH4',
@@ -394,7 +389,6 @@ export default function FingerprintModal({
   const [playMs, setPlayMs] = useState(0);
 
   const [showChart, setShowChart] = useState(false);
-  const [zoomLevel, setZoomLevel] = useState(1);
 
   const [undo, setUndo] = useState<{
     message: string;
@@ -1031,7 +1025,6 @@ export default function FingerprintModal({
     setDescription('');
     setShowNameError(false);
     setShowChart(false);
-    setZoomLevel(1);
     setUndo(null);
     setSavePhase('idle');
     setSaveMessage('');
@@ -1113,6 +1106,12 @@ export default function FingerprintModal({
   const readings = (capturedFingerprint?.olfactoryData?.readings ??
     {}) as Record<string, number>;
   const radarValues = SENSOR_ORDER.map(key => Number(readings[key]) || 0);
+
+  const panelSensors = SENSOR_ORDER.map((key, idx) => ({
+    key,
+    label: SENSOR_LABELS[idx],
+    value: radarValues[idx],
+  }));
 
   const attachmentParts: string[] = [];
   if (hasAudio) {
@@ -1246,7 +1245,7 @@ export default function FingerprintModal({
                       showChart ? 'Hide full chart' : 'View full chart'
                     }>
                     <Text style={styles.chartLinkText}>
-                      {showChart ? 'Hide' : 'Chart'}
+                      {showChart ? 'Hide' : 'Full data'}
                     </Text>
                     <View
                       style={[
@@ -1257,46 +1256,15 @@ export default function FingerprintModal({
                     </View>
                   </TouchableOpacity>
                 </View>
-
-                {showChart && capturedFingerprint && (
-                  <View style={styles.chartBody}>
-                    <CustomRadarChart
-                      data={[
-                        {
-                          key: 'live',
-                          title: title || 'Fingerprint',
-                          values: SENSOR_ORDER.map((_, idx) => ({
-                            x: SENSOR_LABELS[idx],
-                            y: radarValues[idx],
-                          })),
-                          color: {
-                            fill: 'hsla(210, 100%, 50%, 0.35)',
-                            stroke: 'hsla(210, 100%, 40%, 1)',
-                          },
-                        },
-                      ]}
-                      size={Math.min(width - 64, 320)}
-                      maxValue={Math.max(1, ...radarValues)}
-                      gridLevels={5}
-                      zoomLevel={zoomLevel}
-                    />
-
-                    <Slider
-                      style={styles.slider}
-                      minimumValue={1}
-                      maximumValue={20}
-                      value={zoomLevel}
-                      onValueChange={setZoomLevel}
-                      minimumTrackTintColor={COLORS.green}
-                      maximumTrackTintColor="#ccc"
-                    />
-
-                    <Text style={styles.sliderLabel}>
-                      Zoom: {zoomLevel.toFixed(1)}×
-                    </Text>
-                  </View>
-                )}
               </View>
+
+              {showChart && capturedFingerprint && (
+                <SensorReadingsPanel
+                  sensors={panelSensors}
+                  title={title || 'Fingerprint'}
+                  emptyText="Make sure the e-nose is connected and switched on. Readings appear here within a few seconds."
+                />
+              )}
 
               <View style={styles.card}>
                 <View style={styles.cardHeader}>
@@ -1811,23 +1779,6 @@ const styles = StyleSheet.create({
 
   chartChevronExpanded: {
     transform: [{ rotate: '-90deg' }],
-  },
-
-  chartBody: {
-    alignItems: 'center',
-    paddingTop: 4,
-  },
-
-  slider: {
-    width: '80%',
-    height: 40,
-    marginTop: 8,
-  },
-
-  sliderLabel: {
-    fontSize: 12,
-    color: COLORS.muted,
-    marginTop: 2,
   },
 
   input: {

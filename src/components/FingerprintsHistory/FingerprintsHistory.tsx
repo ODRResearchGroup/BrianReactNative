@@ -15,7 +15,7 @@ import {
   SensorRecord,
   deleteSensorRecords,
 } from '../../services/database/db';
-import ExpandedFingerprintView from '../common/ExpandedFingerprintView';
+import FingerprintDetailView from '../common/FingerprintDetailView';
 import ComparisonView from '../common/ComparisonView';
 import { SavedFingerprintData } from '../../types/fingerprintTypes';
 
@@ -36,15 +36,16 @@ function recordToLegacy(record: SensorRecord): SavedFingerprintData {
           Etoh: record.etoh ?? 0,
           NO2: record.no2 ?? 0,
         },
+        // Gas channels are raw sensor voltages (see BLE contract in CLAUDE.md).
         units: {
-          CH4: 'ppm',
-          NH3: 'ppm',
-          HCHO: 'ppm',
-          VOC: 'ppm',
-          Odour: 'a.u.',
-          H2S: 'ppm',
-          Etoh: 'ppm',
-          NO2: 'ppm',
+          CH4: 'V',
+          NH3: 'V',
+          HCHO: 'V',
+          VOC: 'V',
+          Odour: 'V',
+          H2S: 'V',
+          Etoh: 'V',
+          NO2: 'V',
         },
       },
     },
@@ -159,14 +160,10 @@ export default function FingerprintsHistory() {
         })()
       : [];
     return (
-      <ExpandedFingerprintView
+      <FingerprintDetailView
         data={recordToLegacy(rec)}
-        sensorRecordId={rec.id}
-        initialTags={tags}
-        onBack={() => {
-          setExpandedIndex(null);
-          loadFingerprints();
-        }}
+        tags={tags}
+        onBack={() => setExpandedIndex(null)}
       />
     );
   }

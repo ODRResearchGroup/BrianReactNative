@@ -38,10 +38,10 @@ jobs:
       - name: Create React Native environment
         env:
           BRIAN_BACKEND_URL: ${{ vars.BRIAN_BACKEND_URL }}
+          MAPBOX_PUBLIC_TOKEN: ${{ vars.MAPBOX_PUBLIC_TOKEN }}
         run: |
-          printf 'BRIAN_BACKEND_URL=%s\n' \
-            "$BRIAN_BACKEND_URL" \
-            > .env
+          printf 'BRIAN_BACKEND_URL=%s\nMAPBOX_PUBLIC_TOKEN=%s\n' \
+            "$BRIAN_BACKEND_URL" "$MAPBOX_PUBLIC_TOKEN" > .env
 
       - name: Set up Java
         uses: actions/setup-java@v4
@@ -60,6 +60,7 @@ jobs:
             -PversionCode=${{ github.run_number }} \
             -PversionName=1.0.${{ github.run_number }}
         env:
+          ORG_GRADLE_PROJECT_MAPBOX_DOWNLOADS_TOKEN: ${{ secrets.MAPBOX_DOWNLOADS_TOKEN }}
           KEYSTORE_PATH: release.keystore
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
