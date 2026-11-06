@@ -35,6 +35,7 @@ export type SensorDefinition = {
   characteristicUUID: string;
   unit: string;
   kind: SensorKind;
+  board: number | 'environmental';
 };
 
 export const SENSOR_DEFINITIONS = [
@@ -46,6 +47,7 @@ export const SENSOR_DEFINITIONS = [
     characteristicUUID: '00002bd1-0000-1000-8000-00805f9b34fb',
     unit: 'V',
     kind: 'gas',
+    board: 1,
   },
   {
     key: 'NO2',
@@ -55,6 +57,7 @@ export const SENSOR_DEFINITIONS = [
     characteristicUUID: '00002bd2-0000-1000-8000-00805f9b34fb',
     unit: 'V',
     kind: 'gas',
+    board: 2,
   },
   {
     key: 'VOC',
@@ -64,6 +67,7 @@ export const SENSOR_DEFINITIONS = [
     characteristicUUID: '00002bd3-0000-1000-8000-00805f9b34fb',
     unit: 'V',
     kind: 'gas',
+    board: 1,
   },
   {
     key: 'NH3',
@@ -73,6 +77,7 @@ export const SENSOR_DEFINITIONS = [
     characteristicUUID: '00002bcf-0000-1000-8000-00805f9b34fb',
     unit: 'V',
     kind: 'gas',
+    board: 2,
   },
   {
     key: 'HCHO',
@@ -82,6 +87,7 @@ export const SENSOR_DEFINITIONS = [
     characteristicUUID: '6a135b89-f360-4f64-86fc-5a14092034b4',
     unit: 'V',
     kind: 'gas',
+    board: 1,
   },
   {
     key: 'Odour',
@@ -91,6 +97,7 @@ export const SENSOR_DEFINITIONS = [
     characteristicUUID: '4c28fcb8-d69b-404a-8668-41655d814e7f',
     unit: 'V',
     kind: 'gas',
+    board: 1,
   },
   {
     key: 'Etoh',
@@ -100,6 +107,7 @@ export const SENSOR_DEFINITIONS = [
     characteristicUUID: 'f8156843-6d98-4ba2-8014-1cf03d7dedb8',
     unit: 'V',
     kind: 'gas',
+    board: 2,
   },
   {
     key: 'H2S',
@@ -109,6 +117,7 @@ export const SENSOR_DEFINITIONS = [
     characteristicUUID: '87dc71bd-29a4-4218-a2a7-83fd2a69cc40',
     unit: 'V',
     kind: 'gas',
+    board: 2,
   },
   {
     key: 'CO',
@@ -118,6 +127,7 @@ export const SENSOR_DEFINITIONS = [
     characteristicUUID: '88f6fa6c-c4e0-4a3d-ba72-f435641251c4',
     unit: 'V',
     kind: 'gas',
+    board: 3,
   },
   {
     key: 'Smoke',
@@ -127,6 +137,7 @@ export const SENSOR_DEFINITIONS = [
     characteristicUUID: 'cafb955e-6e7b-424b-9e03-6d8d003aa286',
     unit: 'V',
     kind: 'gas',
+    board: 3,
   },
   {
     key: 'H2',
@@ -136,6 +147,7 @@ export const SENSOR_DEFINITIONS = [
     characteristicUUID: '0176655b-0007-4e02-abc1-e9f2d6815f46',
     unit: 'V',
     kind: 'gas',
+    board: 3,
   },
   {
     key: 'TempC',
@@ -145,6 +157,7 @@ export const SENSOR_DEFINITIONS = [
     characteristicUUID: '00002a6e-0000-1000-8000-00805f9b34fb',
     unit: '°C',
     kind: 'env',
+    board: 'environmental',
   },
   {
     key: 'PressureHPa',
@@ -154,6 +167,7 @@ export const SENSOR_DEFINITIONS = [
     characteristicUUID: '00002a6d-0000-1000-8000-00805f9b34fb',
     unit: 'hPa',
     kind: 'env',
+    board: 'environmental',
   },
   {
     key: 'HumidityPct',
@@ -163,6 +177,7 @@ export const SENSOR_DEFINITIONS = [
     characteristicUUID: '00002a6f-0000-1000-8000-00805f9b34fb',
     unit: '%',
     kind: 'env',
+    board: 'environmental',
   },
   {
     key: 'AltitudeM',
@@ -172,6 +187,7 @@ export const SENSOR_DEFINITIONS = [
     characteristicUUID: '00002a69-0000-1000-8000-00805f9b34fb',
     unit: 'm',
     kind: 'env',
+    board: 'environmental',
   },
   {
     key: 'GasResOhm',
@@ -181,6 +197,7 @@ export const SENSOR_DEFINITIONS = [
     characteristicUUID: '5b0e3c0b-1a44-4b76-82ee-8c2adc2dd8e9',
     unit: 'Ω',
     kind: 'env',
+    board: 'environmental',
   },
 ] as const satisfies readonly SensorDefinition[];
 
@@ -212,13 +229,32 @@ export const BOARD_STATUS_CHARACTERISTIC_UUID =
 export type BoardStatusDefinition = {
   bit: number;
   label: string;
+  sensors: SensorDefinition[];
 };
 
 export const BOARD_STATUS_DEFINITIONS: readonly BoardStatusDefinition[] = [
-  { bit: 0, label: 'Gas board 1 (HCHO / CH4 / VOC / Odor)' },
-  { bit: 1, label: 'Gas board 2 (EtOH / H2S / NO2 / NH3)' },
-  { bit: 2, label: 'Gas board 3 (CO / Smoke / H2)' },
-  { bit: 3, label: 'BME680 environmental' },
+  {
+    bit: 0,
+    label: 'Gas board 1',
+    sensors: SENSOR_DEFINITIONS.filter(sensor => sensor.board === 1),
+  },
+  {
+    bit: 1,
+    label: 'Gas board 2',
+    sensors: SENSOR_DEFINITIONS.filter(sensor => sensor.board === 2),
+  },
+  {
+    bit: 2,
+    label: 'Gas board 3',
+    sensors: SENSOR_DEFINITIONS.filter(sensor => sensor.board === 3),
+  },
+  {
+    bit: 3,
+    label: 'BME680 Environmental',
+    sensors: SENSOR_DEFINITIONS.filter(
+      sensor => sensor.board === 'environmental',
+    ),
+  },
 ] as const;
 
 export function isBoardStatusBitSet(status: number, bit: number): boolean {

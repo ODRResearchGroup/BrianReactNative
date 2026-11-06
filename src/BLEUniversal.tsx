@@ -1,5 +1,12 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
-import { BleManager, Device } from 'react-native-ble-plx';
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
+import { BleManager, Device, State } from 'react-native-ble-plx';
 import { PermissionsAndroid, Platform } from 'react-native';
 import mitt from 'mitt';
 import { AppEventEmitter, BLEDataUpdated } from './types/events';
@@ -12,6 +19,8 @@ import {
 const eventEmitter: AppEventEmitter = mitt();
 const ESS_SERVICE_UUID = '0000181a-0000-1000-8000-00805f9b34fb';
 const CUSTOM_SERVICE_UUID_NORMALIZED = CUSTOM_SERVICE_UUID.toLowerCase();
+const SCAN_DURATION_MS = 10000;
+const BLUETOOTH_READY_TIMEOUT_MS = 5000;
 
 // Export the event emitter so other components can use it
 export { eventEmitter };
@@ -22,7 +31,8 @@ type BLEContextType = {
   connectedDevice: Device | null;
   characteristicValues: { [key: string]: number };
   boardStatus: number | null;
-  scanForDevices: () => void;
+  scanForDevices: () => Promise<void>;
+  stopScan: () => void;
   connectToDevice: (device: Device) => Promise<Device>;
   enableNotifications: (
     device: Device,
@@ -41,8 +51,36 @@ type BLEContextType = {
 
 const BLEContext = createContext<BLEContextType | undefined>(undefined);
 
+const waitForPoweredOn = async (manager: BleManager): Promise<boolean> => {
+  if ((await manager.state()) === State.PoweredOn) {
+    return true;
+  }
+  return new Promise<boolean>(resolve => {
+    const timer = setTimeout(() => {
+      subscription.remove();
+      resolve(false);
+    }, BLUETOOTH_READY_TIMEOUT_MS);
+    const subscription = manager.onStateChange(state => {
+      if (state === State.PoweredOn) {
+        clearTimeout(timer);
+        subscription.remove();
+        resolve(true);
+      }
+    });
+  });
+};
+
 export const BLEProvider = ({ children }: { children: React.ReactNode }) => {
-  const [manager] = useState(() => new BleManager());
+  const managerRef = useRef<BleManager | null>(null);
+
+  const getManager = useCallback((): BleManager => {
+    if (!managerRef.current) {
+      managerRef.current = new BleManager();
+    }
+    return managerRef.current;
+  }, []);
+
+  const [manager, setManager] = useState<BleManager>(() => getManager());
   const [devices, setDevices] = useState<Device[]>([]);
   const [connectedDevice, setConnectedDevice] = useState<Device | null>(null);
   const [characteristicValues, setCharacteristicValues] = useState<{
@@ -50,13 +88,62 @@ export const BLEProvider = ({ children }: { children: React.ReactNode }) => {
   }>({});
   const [boardStatus, setBoardStatus] = useState<number | null>(null);
 
+  const scanTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scanSettleRef = useRef<{
+    resolve: () => void;
+    reject: (error: unknown) => void;
+  } | null>(null);
+
+  const endScan = useCallback((error?: unknown) => {
+    if (scanTimeoutRef.current) {
+      clearTimeout(scanTimeoutRef.current);
+      scanTimeoutRef.current = null;
+    }
+    managerRef.current?.stopDeviceScan();
+
+    const settle = scanSettleRef.current;
+    scanSettleRef.current = null;
+    if (settle) {
+      if (error) {
+        settle.reject(error);
+      } else {
+        settle.resolve();
+      }
+    }
+  }, []);
+
+  const stopScan = useCallback(() => {
+    endScan();
+  }, [endScan]);
+
   useEffect(() => {
+    const activeManager = getManager();
+    setManager(activeManager);
+    setConnectedDevice(null);
+    setDevices([]);
+
     requestPermissions();
 
+    activeManager.stopDeviceScan();
+    activeManager
+      .connectedDevices([CUSTOM_SERVICE_UUID, ESS_SERVICE_UUID])
+      .then(staleDevices =>
+        Promise.all(
+          staleDevices.map(staleDevice =>
+            staleDevice.cancelConnection().catch(() => undefined),
+          ),
+        ),
+      )
+      .catch(() => undefined);
+
     return () => {
-      manager.destroy();
+      endScan();
+      if (managerRef.current === activeManager) {
+        managerRef.current = null;
+      }
+      activeManager.destroy();
     };
-  }, [manager]);
+  }, [endScan, getManager]);
 
   // Request Android permissions
   const requestPermissions = async (): Promise<boolean> => {
@@ -89,61 +176,75 @@ export const BLEProvider = ({ children }: { children: React.ReactNode }) => {
     return !denied;
   };
 
-  // Scan for devices
-  const scanForDevices = async () => {
+  const scanForDevices = async (): Promise<void> => {
     if (!(await requestPermissions())) {
       return;
     }
 
-    manager.stopDeviceScan();
+    const activeManager = getManager();
+
+    if (!(await waitForPoweredOn(activeManager))) {
+      throw new Error(
+        'Bluetooth is off or not ready. Turn it on and try again.',
+      );
+    }
+
+    endScan();
     setDevices([]);
 
-    manager.startDeviceScan(
-      null,
-      { allowDuplicates: false, scanMode: 2 },
-      (error, device) => {
-        if (error) {
-          console.error('Scan error:', error);
-          return;
-        }
+    return new Promise<void>((resolve, reject) => {
+      scanSettleRef.current = { resolve, reject };
 
-        const advertisedName = device?.name || device?.localName;
-        const advertisedServices = (device?.serviceUUIDs || []).map(uuid =>
-          uuid.toLowerCase(),
-        );
-        const isBrianDevice =
-          !!device &&
-          ((!!advertisedName && /^brian(?:-|$)/i.test(advertisedName)) ||
-            advertisedServices.includes(ESS_SERVICE_UUID) ||
-            advertisedServices.includes(CUSTOM_SERVICE_UUID_NORMALIZED));
+      activeManager.startDeviceScan(
+        null,
+        { allowDuplicates: false, scanMode: 2 },
+        (error, device) => {
+          if (error) {
+            console.error('Scan error:', error);
+            endScan(error);
+            return;
+          }
 
-        if (device) {
-          console.log(
-            `BLE advertisement: ${advertisedName || '<unnamed>'} (${
-              device.id
-            })`,
-            advertisedServices,
+          const advertisedName = device?.name || device?.localName;
+          const advertisedServices = (device?.serviceUUIDs || []).map(uuid =>
+            uuid.toLowerCase(),
           );
-        }
+          const isBrianDevice =
+            !!device &&
+            ((!!advertisedName && /^brian(?:-|$)/i.test(advertisedName)) ||
+              advertisedServices.includes(ESS_SERVICE_UUID) ||
+              advertisedServices.includes(CUSTOM_SERVICE_UUID_NORMALIZED));
 
-        if (isBrianDevice) {
-          setDevices(prevDevices => {
-            if (!prevDevices.find(d => d.id === device.id)) {
-              return [...prevDevices, device];
-            }
-            return prevDevices;
-          });
-        }
-      },
-    );
+          if (device) {
+            console.log(
+              `BLE advertisement: ${advertisedName || '<unnamed>'} (${
+                device.id
+              })`,
+              advertisedServices,
+            );
+          }
 
-    setTimeout(() => {
-      manager.stopDeviceScan();
-    }, 10000);
+          if (isBrianDevice) {
+            setDevices(prevDevices => {
+              if (!prevDevices.find(d => d.id === device.id)) {
+                return [...prevDevices, device];
+              }
+              return prevDevices;
+            });
+          }
+        },
+      );
+
+      scanTimeoutRef.current = setTimeout(() => {
+        endScan();
+      }, SCAN_DURATION_MS);
+    });
   };
 
   // Connect to a device
   const connectToDevice = async (device: Device): Promise<Device> => {
+    endScan();
+
     try {
       const connected = await device.connect();
       const discovered =
@@ -450,6 +551,7 @@ export const BLEProvider = ({ children }: { children: React.ReactNode }) => {
         characteristicValues,
         boardStatus,
         scanForDevices,
+        stopScan,
         connectToDevice,
         enableNotifications,
         readBoardStatus,
