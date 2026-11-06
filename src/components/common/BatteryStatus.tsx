@@ -46,9 +46,7 @@ export function BatteryIndicator({ percentage }: BatteryIndicatorProps) {
   return (
     <View style={styles.indicator}>
       <Text style={[styles.percentage, { color }]}>
-        {boundedPercentage === undefined
-          ? '--'
-          : `${Math.round(boundedPercentage)}%`}
+        {boundedPercentage && `${Math.round(boundedPercentage)}%`}
       </Text>
       <Icon color={color} size={22} />
     </View>

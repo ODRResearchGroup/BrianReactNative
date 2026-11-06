@@ -18,15 +18,13 @@ import { BaselineProvider } from './components/common/BaselineContext';
 import FingerprintsHistory from './components/FingerprintsHistory/FingerprintsHistory';
 import LiveData from './components/LiveData/LiveData';
 import MappedFingerprints from './components/MappedFingerprints/MappedFingerprints';
-import BLEScreen from './components/BLE/BLEScreen';
 import SmellWalkScreen from './components/SmellWalk/SmellWalkScreen';
 import { InfluxDBProvider } from './services/influx/InfluxDBService';
 import { runSyncWorker } from './services/sync/syncWorker';
 import { checkAndPromptForAppUpdate } from './services/updates/appUpdater';
 import Mapbox from '@rnmapbox/maps';
 import Config from 'react-native-config';
-
-// ─── Navigation param types ───────────────────────────────────────────────────
+import DeviceScreen from './components/DeviceScreen/DeviceScreen';
 
 export type RootStackParamList = {
   DataHome: undefined;
@@ -125,6 +123,7 @@ export default function App() {
                       screenOptions={{
                         headerShown: false,
                         sceneStyle: { backgroundColor: 'transparent' },
+                        tabBarActiveTintColor: '#1f5c3f',
                       }}>
                       <Tab.Screen
                         name="Fingerprint"
@@ -148,7 +147,7 @@ export default function App() {
                       />
                       <Tab.Screen
                         name="Device"
-                        component={BLEScreen}
+                        component={DeviceScreen}
                         options={{ tabBarIcon: renderDeviceIcon }}
                       />
                     </Tab.Navigator>
