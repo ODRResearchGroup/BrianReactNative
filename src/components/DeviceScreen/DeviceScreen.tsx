@@ -423,12 +423,12 @@ export default function DeviceScreen() {
             title: `${justConnectedName ?? 'e-Nose'} connected, with warnings`,
             body: `${missingBoards.length} hardware ${
               missingBoards.length === 1 ? 'part is' : 'parts are'
-            } missing. You can still start a walk, but some readings will be empty.`,
+            } missing. Some readings will be empty.`,
           }
         : {
             tone: 'green' as const,
             title: `${justConnectedName ?? 'e-Nose'} is ready`,
-            body: 'All hardware detected. Start a smell walk when you are.',
+            body: 'All hardware detected.',
           };
     }
 
