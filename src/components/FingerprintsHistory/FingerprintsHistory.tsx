@@ -18,9 +18,9 @@ import {
   deleteSensorRecords,
 } from '../../services/database/db';
 import FingerprintDetailView from '../common/FingerprintDetailView';
-import ComparisonView from '../common/ComparisonView';
 import { recordToSaved } from '../../sensorRecords';
 import RecordRadar from '../common/RecordRadar';
+import ComparisonScreen from '../ComparisonScreen.tsx/ComparisonScreen';
 
 const LOAD_LIMIT = 500;
 
@@ -342,7 +342,7 @@ export default function FingerprintsHistory() {
       .filter(r => selectedIds.includes(r.id))
       .map(r => ({ key: r.id, data: recordToSaved(r) }));
     return (
-      <ComparisonView
+      <ComparisonScreen
         selectedItems={selectedLegacy}
         onBack={() => setShowComparison(false)}
       />
