@@ -63,11 +63,6 @@ type InfluxDBContextType = {
     deviceName?: string | null,
   ) => Promise<void>;
   stopSmellWalk: () => Promise<string | null>;
-  /**
-   * Feeds the latest decoded sensor values (keyed by sensor registry key)
-   * into the active walk. Safe to call often; does nothing when no walk is
-   * active.
-   */
   ingestReadings: (
     values: Record<string, unknown>,
     deviceId?: string | null,
@@ -105,10 +100,6 @@ function toLiveLocation(position: GeoPosition): LiveLocation {
   };
 }
 
-/**
- * The sensor registry keys (CH4, NO2, TempC, ...) are used directly as the
- * InfluxDB measurement names. Only keys defined in the registry are written.
- */
 const VALID_SENSOR_KEYS = new Set<string>(
   SENSOR_DEFINITIONS.map(sensor => sensor.key),
 );
@@ -123,13 +114,6 @@ function getInfluxClient(): InfluxClient {
   return influxClient;
 }
 
-/**
- * Builds one InfluxDB point per sensor reading.
- *
- *  - measurement: the sensor registry key (CH4, NH3, TempC, ...)
- *  - tags:        device_name, walk_id, date (day)  -> filterable
- *  - fields:      value (+ latitude / longitude / accuracy_m)
- */
 function buildInfluxPoints(
   walkId: string,
   deviceName: string,
@@ -159,7 +143,6 @@ function buildInfluxPoints(
 
     const fields: Record<string, string | number | boolean> = { value };
 
-    // Position travels with each reading so it can be mapped on its own.
     if (location) {
       fields.latitude = location.latitude;
       fields.longitude = location.longitude;
@@ -253,7 +236,6 @@ export const InfluxDBProvider = ({
         (position: GeoPosition) => {
           const nextLocation = toLiveLocation(position);
 
-          // Ignore duplicate deliveries of the same fix.
           const previousLocation = latestLocationRef.current;
           if (
             previousLocation &&
@@ -434,10 +416,6 @@ export const InfluxDBProvider = ({
     }
   }, []);
 
-  /**
-   * Single entry point for readings during a walk, used both by the BLE
-   * event path and by ingestReadings.
-   */
   const applyReadings = useCallback(
     (readings: Record<string, unknown>, deviceId?: string | null) => {
       if (!isSmellWalkActiveRef.current) {
@@ -458,8 +436,6 @@ export const InfluxDBProvider = ({
       const resolvedDeviceId = deviceId || walkDeviceIdRef.current || 'unknown';
       walkDeviceIdRef.current = resolvedDeviceId;
 
-      // If no device name was supplied when the walk started (or the walk was
-      // restored), fall back to the device id.
       if (walkDeviceNameRef.current === 'unknown') {
         walkDeviceNameRef.current = resolvedDeviceId;
       }
@@ -541,8 +517,6 @@ export const InfluxDBProvider = ({
         );
 
         walkIdRef.current = activeWalkId;
-        // The device name is not persisted; it is filled in again from the
-        // first BLE reading after the restore.
         walkDeviceNameRef.current = 'unknown';
         isSmellWalkActiveRef.current = true;
 
@@ -683,21 +657,9 @@ export const InfluxDBProvider = ({
     return completedWalkId;
   }, [flushWalkData]);
 
-  /*
-   * BLE -> SensorEvent
-   *
-   * The shared sensor registry is the only source of truth for mapping
-   * characteristic UUIDs to sensor keys.
-   */
   useEffect(() => {
     const unrecognisedFrameWarned = new Set<string>();
 
-    /**
-     * The firmware sends all gas sensors in one frame characteristic and all
-     * environmental sensors in another. A frame is expected to arrive already
-     * decoded as an object keyed by sensor registry key (e.g. { CH4: 1.2 }).
-     * Sensor keys are looked up by name, so no byte order is assumed.
-     */
     const handleFrameUpdate = (
       event: BLEDataUpdated,
       characteristicUUID: string,
