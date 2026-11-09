@@ -11,7 +11,6 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
-import Svg, { Path } from 'react-native-svg';
 import {
   listSensorRecords,
   SensorRecord,
@@ -22,6 +21,7 @@ import { recordToSaved } from '../../../sensorRecords';
 import RecordRadar from '../../common/RecordRadar';
 import ComparisonScreen from '../Comparison/ComparisonScreen';
 import { COLORS } from '../../../consts';
+import { Camera, Check, Search, SlidersHorizontal } from 'lucide-react-native';
 
 const LOAD_LIMIT = 500;
 
@@ -155,39 +155,6 @@ const capturedLabel = (ms: number) => {
     d.getDate() === now.getDate();
   return sameDay ? `Today, ${time}` : `${d.toLocaleDateString()}, ${time}`;
 };
-
-const icon = {
-  fill: 'none',
-  strokeLinecap: 'round' as const,
-  strokeLinejoin: 'round' as const,
-  viewBox: '0 0 24 24',
-};
-
-const SearchIcon = ({ color = COLORS.muted }: { color?: string }) => (
-  <Svg width={20} height={20} stroke={color} strokeWidth={2} {...icon}>
-    <Path d="M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16Z" />
-    <Path d="m21 21-4.3-4.3" />
-  </Svg>
-);
-
-const SlidersIcon = ({ color = COLORS.ink }: { color?: string }) => (
-  <Svg width={18} height={18} stroke={color} strokeWidth={2} {...icon}>
-    <Path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0" />
-    <Path d="M16 4v4M10 10v4M18 16v4" />
-  </Svg>
-);
-
-const CheckIcon = ({ color = '#fff' }: { color?: string }) => (
-  <Svg width={14} height={14} stroke={color} strokeWidth={3} {...icon}>
-    <Path d="M20 6 9 17l-5-5" />
-  </Svg>
-);
-
-const CameraIcon = ({ color = COLORS.muted }: { color?: string }) => (
-  <Svg width={14} height={14} stroke={color} strokeWidth={2} {...icon}>
-    <Path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z" />
-  </Svg>
-);
 
 function Segmented<T extends string>({
   options,
@@ -363,7 +330,7 @@ export default function SavedFingerprintsScreen() {
         <View style={styles.card}>
           <View style={styles.searchRow}>
             <View style={styles.searchBox}>
-              <SearchIcon />
+              <Search size={16} color={COLORS.ink} />
               <TextInput
                 style={styles.searchInput}
                 value={filters.title}
@@ -385,7 +352,10 @@ export default function SavedFingerprintsScreen() {
               accessibilityLabel={
                 showFilters ? 'Hide filters' : 'Show filters'
               }>
-              <SlidersIcon color={showFilters ? '#fff' : COLORS.ink} />
+              <SlidersHorizontal
+                size={16}
+                color={showFilters ? COLORS.bg : COLORS.ink}
+              />
               <Text
                 style={[
                   styles.filterButtonText,
@@ -524,7 +494,7 @@ export default function SavedFingerprintsScreen() {
                   <View
                     style={[styles.check, isSelected && styles.checkOn]}
                     accessible={false}>
-                    {isSelected && <CheckIcon />}
+                    {isSelected && <Check size={16} color={COLORS.bg} />}
                   </View>
                 )}
 
@@ -566,7 +536,7 @@ export default function SavedFingerprintsScreen() {
                   />
                 ) : (
                   <View style={styles.noPhoto}>
-                    <CameraIcon />
+                    <Camera color={COLORS.green} />
                   </View>
                 )}
               </View>

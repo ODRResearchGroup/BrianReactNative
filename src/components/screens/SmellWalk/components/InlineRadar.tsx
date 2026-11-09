@@ -1,10 +1,10 @@
 import { Pressable, View, Text, StyleSheet } from 'react-native';
 import { SensorAnalysis } from '../types';
-import WaitIcon from './icons/WaitIcon';
 import { COLORS } from '../../../../consts';
 import CustomRadarChart, {
   radarSeries,
 } from '../../../common/CustomRadarChart';
+import { Clock } from 'lucide-react-native';
 
 export default function InlineRadar({
   sensors,
@@ -36,7 +36,7 @@ export default function InlineRadar({
         <CustomRadarChart data={series} size={RADAR_SIZE} variant="compact" />
       ) : (
         <View style={styles.inlineRadarEmpty}>
-          <WaitIcon size={18} color={COLORS.muted} />
+          <Clock size={18} color={COLORS.muted} />
           <Text style={styles.caption}>No signal</Text>
         </View>
       )}

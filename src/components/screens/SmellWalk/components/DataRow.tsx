@@ -1,6 +1,6 @@
-import { Dot } from 'lucide-react-native';
 import { View, Text, StyleSheet } from 'react-native';
 import { COLORS } from '../../../../consts';
+import Dot from './Dot';
 
 export default function DataRow({
   label,

@@ -19,8 +19,9 @@ import {
 import type { CameraRuntimeError } from 'react-native-vision-camera';
 import ImageEditor from '@react-native-community/image-editor';
 import { unlink } from 'react-native-fs';
-import Svg, { Path, Line, Circle } from 'react-native-svg';
+import Svg, { Path, Circle } from 'react-native-svg';
 import { COLORS } from '../../consts';
+import { Check, RefreshCw, X, Zap, ZapOff } from 'lucide-react-native';
 
 interface CameraCaptureProps {
   onClose: () => void;
@@ -96,35 +97,6 @@ const Icon = ({
     strokeLinejoin="round">
     {children}
   </Svg>
-);
-
-const CloseIcon = (p: IconProps) => (
-  <Icon {...p}>
-    <Path d="M18 6 6 18" />
-    <Path d="m6 6 12 12" />
-  </Icon>
-);
-
-const FlashIcon = ({ off, ...p }: IconProps & { off?: boolean }) => (
-  <Icon {...p}>
-    <Path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z" />
-    {off && <Line x1="3" y1="3" x2="21" y2="21" />}
-  </Icon>
-);
-
-const FlipIcon = (p: IconProps) => (
-  <Icon {...p}>
-    <Path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
-    <Path d="M21 3v5h-5" />
-    <Path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
-    <Path d="M8 16H3v5" />
-  </Icon>
-);
-
-const CheckIcon = (p: IconProps) => (
-  <Icon strokeWidth={2.6} {...p}>
-    <Path d="M20 6 9 17l-5-5" />
-  </Icon>
 );
 
 const CameraGlyph = (p: IconProps) => (
@@ -317,7 +289,7 @@ export default function CameraCapture({
             onPress={handleClose}
             accessibilityRole="button"
             accessibilityLabel="Close camera">
-            <CloseIcon />
+            <X color={COLORS.bg} />
           </TouchableOpacity>
         )}
 
@@ -331,7 +303,11 @@ export default function CameraCapture({
             onPress={() => setFlash(f => FLASH_CYCLE[f])}
             accessibilityRole="button"
             accessibilityLabel={`Flash ${FLASH_LABEL[flash]}`}>
-            <FlashIcon off={flash === 'off'} size={18} />
+            {flash === 'off' ? (
+              <Zap color={COLORS.bg} size={16} />
+            ) : (
+              <ZapOff color={COLORS.bg} size={16} />
+            )}
             <Text style={styles.flashLabel}>{FLASH_LABEL[flash]}</Text>
           </TouchableOpacity>
         ) : (
@@ -384,7 +360,7 @@ export default function CameraCapture({
             onPress={retake}
             accessibilityRole="button"
             accessibilityLabel="Retake photo">
-            <FlipIcon size={18} />
+            <RefreshCw color={COLORS.bg} size={16} />
             <Text style={styles.retakeText}>Retake</Text>
           </TouchableOpacity>
 
@@ -393,7 +369,7 @@ export default function CameraCapture({
             onPress={usePhoto}
             accessibilityRole="button"
             accessibilityLabel="Use this photo">
-            <CheckIcon size={18} />
+            <Check color={COLORS.bg} size={16} />
             <Text style={styles.useText}>Use photo</Text>
           </TouchableOpacity>
         </View>
@@ -420,7 +396,7 @@ export default function CameraCapture({
                 disabled={isCapturing}
                 accessibilityRole="button"
                 accessibilityLabel="Switch camera">
-                <FlipIcon />
+                <RefreshCw color={COLORS.bg} />
               </TouchableOpacity>
             )}
           </View>

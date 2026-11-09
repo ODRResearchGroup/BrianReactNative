@@ -1,4 +1,4 @@
-import { X } from 'lucide-react-native';
+import { Clock, X } from 'lucide-react-native';
 import {
   Modal,
   View,
@@ -10,7 +10,6 @@ import {
 import { MAX_POINTS, SAMPLE_MS } from '../consts';
 import { SensorAnalysis } from '../types';
 import { agoLabel, trendArrow } from '../utils';
-import WaitIcon from './icons/WaitIcon';
 import LevelBadge from './LevelBadge';
 import { COLORS } from '../../../../consts';
 import CustomRadarChart, {
@@ -75,7 +74,7 @@ export default function SensorSheet({
             showsVerticalScrollIndicator={false}>
             {!hasAnyValue ? (
               <View style={styles.emptyState}>
-                <WaitIcon size={28} color={COLORS.muted} />
+                <Clock size={28} color={COLORS.muted} />
                 <Text style={styles.emptyTitle}>No readings yet</Text>
                 <Text style={styles.emptyText}>
                   Make sure the e-nose is connected and switched on. Readings

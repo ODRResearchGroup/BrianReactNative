@@ -28,6 +28,7 @@ import {
   ChevronDownIcon,
   ChevronUpIcon,
   CircleStop,
+  Clock,
   FingerprintPattern,
   Play,
   X,
@@ -38,7 +39,6 @@ import {
   MAX_POINTS,
   MIN_POINTS_FOR_LEVELS,
 } from './consts';
-import WaitIcon from './components/icons/WaitIcon';
 import { ChartLine, Point, SensorAnalysis } from './types';
 import {
   agoLabel,
@@ -56,7 +56,7 @@ import InlineRadar from './components/InlineRadar';
 import LineGraph from './components/LineGraph';
 import RoundAction from './components/RoundAction';
 import SensorSheet from './components/SensorSheet';
-import Dot from './components/icons/Dot';
+import Dot from './components/Dot';
 import { useBLE } from '../../../BLEUniversal';
 import { COLORS } from '../../../consts';
 import {
@@ -351,8 +351,6 @@ export default function SmellWalkScreen() {
         (windowSize - 1) * (SAMPLE_MS / 1000),
       )}.`;
 
-  /* ---------------- actions ---------------- */
-
   const handleStopWalk = async () => {
     try {
       const completedWalkId = await stopSmellWalk();
@@ -585,7 +583,7 @@ export default function SmellWalkScreen() {
               />
             ) : (
               <View style={styles.graphEmpty}>
-                <WaitIcon size={22} color={COLORS.muted} />
+                <Clock size={22} color={COLORS.muted} />
                 <Text style={styles.bodyMuted}>
                   {isConnected
                     ? 'Graph starts after a few readings.'

@@ -35,7 +35,7 @@ import {
 } from '../../../sensors';
 
 import SignalBars from './SignalBars';
-import Dot from '../SmellWalk/components/icons/Dot';
+import Dot from '../SmellWalk/components/Dot';
 import { COLORS } from '../../../consts';
 
 const NEXT_SCREEN = 'Smell Walk';

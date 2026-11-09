@@ -36,6 +36,7 @@ import {
 } from '../../../sensors';
 import { CHANNEL_COLORS, COLORS } from '../../../consts';
 import FingerprintModal from '../../common/FingerprintModal';
+import { ChevronRight } from 'lucide-react-native';
 
 const { width } = Dimensions.get('window');
 
@@ -59,20 +60,6 @@ const emptyHistory = (): Record<SensorKey, PlotPoint[]> =>
     acc[s.key] = [];
     return acc;
   }, {} as Record<SensorKey, PlotPoint[]>);
-
-const ChevronIcon = ({ size = 18, color = COLORS.muted }) => (
-  <Svg
-    width={size}
-    height={size}
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke={color}
-    strokeWidth={2}
-    strokeLinecap="round"
-    strokeLinejoin="round">
-    <Path d="m9 18 6-6-6-6" />
-  </Svg>
-);
 
 const LiveRadar = memo(function LiveRadar({
   items,
@@ -302,7 +289,7 @@ export default function FingerprintLiveDataScreen() {
                 <Text style={styles.listValue}>
                   {item.value.toFixed(4)} {item.unit}
                 </Text>
-                <ChevronIcon />
+                <ChevronRight size={16} color={COLORS.green} />
               </View>
             </Pressable>
           ))}

@@ -35,8 +35,6 @@ import {
   mkdir,
 } from 'react-native-fs';
 
-import Svg, { Path, Rect, Line, Circle } from 'react-native-svg';
-
 import useLiveLocation from '../../hooks/useLiveLocation';
 
 import { SensorEvent, emitter } from '../../types/events';
@@ -74,6 +72,20 @@ import 'react-native-get-random-values';
 import { v4 as uuidv4 } from 'uuid';
 import { SensorReadings } from '../../types/fingerprintTypes';
 import { COLORS } from '../../consts';
+import {
+  Camera,
+  Check,
+  AlertCircle,
+  Mic,
+  Pause,
+  Play,
+  RefreshCw,
+  Trash,
+  ChevronRight,
+  ChevronUp,
+  Info,
+  Square,
+} from 'lucide-react-native';
 
 type MicPhase = 'idle' | 'recording' | 'uploading' | 'processing' | 'error';
 type PlayPhase = 'stopped' | 'playing' | 'paused';
@@ -131,109 +143,6 @@ const makeBars = (
       c: colorFor(i),
     };
   });
-
-type IconProps = { size?: number; color?: string };
-
-const Icon = ({
-  size = 20,
-  color = COLORS.ink,
-  strokeWidth = 1.8,
-  children,
-}: IconProps & { strokeWidth?: number; children: React.ReactNode }) => (
-  <Svg
-    width={size}
-    height={size}
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke={color}
-    strokeWidth={strokeWidth}
-    strokeLinecap="round"
-    strokeLinejoin="round">
-    {children}
-  </Svg>
-);
-
-const MicIcon = (p: IconProps) => (
-  <Icon {...p}>
-    <Path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
-    <Path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-    <Line x1="12" y1="19" x2="12" y2="22" />
-  </Icon>
-);
-
-const CameraIcon = (p: IconProps) => (
-  <Icon {...p}>
-    <Path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z" />
-    <Circle cx="12" cy="13" r="3" />
-  </Icon>
-);
-
-const PlayIcon = ({ size = 20, color = '#fff' }: IconProps) => (
-  <Svg width={size} height={size} viewBox="0 0 24 24">
-    <Path d="M7 3 21 12 7 21Z" fill={color} />
-  </Svg>
-);
-
-const PauseIcon = ({ size = 20, color = '#fff' }: IconProps) => (
-  <Svg width={size} height={size} viewBox="0 0 24 24">
-    <Rect x="6" y="4" width="4" height="16" rx="1.5" fill={color} />
-    <Rect x="14" y="4" width="4" height="16" rx="1.5" fill={color} />
-  </Svg>
-);
-
-const StopIcon = ({ size = 16, color = '#fff' }: IconProps) => (
-  <Svg width={size} height={size} viewBox="0 0 24 24">
-    <Rect x="4" y="4" width="16" height="16" rx="3" fill={color} />
-  </Svg>
-);
-
-const TrashIcon = (p: IconProps) => (
-  <Icon {...p}>
-    <Path d="M3 6h18" />
-    <Path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
-    <Path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-  </Icon>
-);
-
-const RefreshIcon = (p: IconProps) => (
-  <Icon {...p}>
-    <Path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
-    <Path d="M21 3v5h-5" />
-    <Path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
-    <Path d="M8 16H3v5" />
-  </Icon>
-);
-
-const CheckIcon = ({
-  strokeWidth = 3,
-  ...p
-}: IconProps & { strokeWidth?: number }) => (
-  <Icon strokeWidth={strokeWidth} {...p}>
-    <Path d="M20 6 9 17l-5-5" />
-  </Icon>
-);
-
-const InfoIcon = (p: IconProps) => (
-  <Icon strokeWidth={2} {...p}>
-    <Circle cx="12" cy="12" r="10" />
-    <Line x1="12" y1="16" x2="12" y2="12" />
-    <Line x1="12" y1="8" x2="12.01" y2="8" />
-  </Icon>
-);
-
-const AlertIcon = (p: IconProps) => (
-  <Icon strokeWidth={2} {...p}>
-    <Circle cx="12" cy="12" r="10" />
-    <Line x1="12" y1="8" x2="12" y2="12" />
-    <Line x1="12" y1="16" x2="12.01" y2="16" />
-  </Icon>
-);
-
-const ChevronIcon = (p: IconProps) => (
-  <Icon strokeWidth={2} {...p}>
-    <Path d="m9 18 6-6-6-6" />
-  </Icon>
-);
 
 function Waveform({
   bars,
@@ -1113,12 +1022,12 @@ export default function FingerprintModal({
                     <Text style={styles.chartLinkText}>
                       {showChart ? 'Hide' : 'Full data'}
                     </Text>
-                    <View
-                      style={[
-                        styles.chartChevron,
-                        showChart && styles.chartChevronExpanded,
-                      ]}>
-                      <ChevronIcon size={18} color={COLORS.green} />
+                    <View style={[styles.chartChevron]}>
+                      {showChart ? (
+                        <ChevronUp size={18} color={COLORS.green} />
+                      ) : (
+                        <ChevronRight size={18} color={COLORS.green} />
+                      )}
                     </View>
                   </TouchableOpacity>
                 </View>
@@ -1141,7 +1050,7 @@ export default function FingerprintModal({
                       styles.pill,
                       nameError && { backgroundColor: COLORS.redTint },
                     ]}>
-                    {hasName && <CheckIcon size={14} color={COLORS.green} />}
+                    {hasName && <Check size={14} color={COLORS.green} />}
                     <Text
                       style={[
                         styles.pillText,
@@ -1170,7 +1079,7 @@ export default function FingerprintModal({
 
                 {nameError && (
                   <View style={styles.errorRow} accessibilityRole="alert">
-                    <AlertIcon size={16} color={COLORS.red} />
+                    <AlertCircle size={16} color={COLORS.red} />
                     <Text style={styles.errorText}>
                       Give it a name so you can find it later
                     </Text>
@@ -1202,7 +1111,7 @@ export default function FingerprintModal({
 
                   {voiceAdded ? (
                     <View style={styles.pill}>
-                      <CheckIcon size={14} color={COLORS.green} />
+                      <Check size={14} color={COLORS.green} />
                       <Text style={styles.pillText}>Added</Text>
                     </View>
                   ) : (
@@ -1214,7 +1123,7 @@ export default function FingerprintModal({
                   <View style={styles.recordingPanel}>
                     {isReplacing && (
                       <View style={styles.replaceBanner}>
-                        <InfoIcon size={16} color="#5a3a37" />
+                        <Info size={16} color="#5a3a37" />
                         <Text style={styles.replaceBannerText}>
                           Your current {fmt(audioMeta?.durationMs ?? 0)} note is
                           kept until you stop. Cancel to keep it.
@@ -1253,7 +1162,7 @@ export default function FingerprintModal({
                         onPress={handleMicPress}
                         accessibilityRole="button"
                         accessibilityLabel="Stop recording">
-                        <StopIcon size={16} />
+                        <Square size={16} color={COLORS.bg} />
                         <Text style={styles.stopButtonText}>Stop</Text>
                       </TouchableOpacity>
                     </View>
@@ -1268,7 +1177,7 @@ export default function FingerprintModal({
                 ) : micPhase === 'error' ? (
                   <View style={styles.errorPanel}>
                     <View style={styles.errorPanelTop}>
-                      <AlertIcon size={18} color={COLORS.red} />
+                      <AlertCircle size={18} color={COLORS.red} />
                       <Text style={styles.errorPanelText}>
                         The voice note didn't upload. Try recording it again.
                       </Text>
@@ -1286,7 +1195,7 @@ export default function FingerprintModal({
                         style={styles.outlineButton}
                         onPress={() => startRecording(false)}
                         accessibilityRole="button">
-                        <MicIcon size={16} color={COLORS.green} />
+                        <Mic size={16} color={COLORS.green} />
                         <Text style={styles.outlineButtonText}>
                           Record again
                         </Text>
@@ -1305,7 +1214,11 @@ export default function FingerprintModal({
                             ? 'Pause voice note'
                             : 'Play voice note'
                         }>
-                        {playPhase === 'playing' ? <PauseIcon /> : <PlayIcon />}
+                        {playPhase === 'playing' ? (
+                          <Pause color={COLORS.bg} />
+                        ) : (
+                          <Play color={COLORS.bg} />
+                        )}
                       </TouchableOpacity>
 
                       <Waveform
@@ -1324,7 +1237,7 @@ export default function FingerprintModal({
                         disabled={isBusy}
                         accessibilityRole="button"
                         accessibilityLabel="Re-record voice note">
-                        <MicIcon size={18} color={COLORS.green} />
+                        <Mic size={18} color={COLORS.green} />
                         <Text
                           style={[
                             styles.actionButtonText,
@@ -1340,7 +1253,7 @@ export default function FingerprintModal({
                         disabled={isBusy}
                         accessibilityRole="button"
                         accessibilityLabel="Delete voice note">
-                        <TrashIcon size={18} color={COLORS.red} />
+                        <Trash size={18} color={COLORS.red} />
                         <Text
                           style={[
                             styles.actionButtonText,
@@ -1362,7 +1275,7 @@ export default function FingerprintModal({
                     accessibilityRole="button"
                     accessibilityLabel="Record a voice note">
                     <View style={styles.slotIcon}>
-                      <MicIcon size={22} color={COLORS.green} />
+                      <Mic size={22} color={COLORS.green} />
                     </View>
                     <View style={styles.slotText}>
                       <Text style={styles.slotTitle}>Record a voice note</Text>
@@ -1380,7 +1293,7 @@ export default function FingerprintModal({
 
                   {photoPath ? (
                     <View style={styles.pill}>
-                      <CheckIcon size={14} color={COLORS.green} />
+                      <Check size={14} color={COLORS.green} />
                       <Text style={styles.pillText}>Added</Text>
                     </View>
                   ) : (
@@ -1406,7 +1319,7 @@ export default function FingerprintModal({
                           disabled={isSaving}
                           accessibilityRole="button"
                           accessibilityLabel="Replace photo">
-                          <RefreshIcon size={16} />
+                          <RefreshCw size={16} />
                           <Text style={styles.pillButtonText}>Replace</Text>
                         </TouchableOpacity>
 
@@ -1416,7 +1329,7 @@ export default function FingerprintModal({
                           disabled={isSaving}
                           accessibilityRole="button"
                           accessibilityLabel="Remove photo">
-                          <TrashIcon size={16} color={COLORS.red} />
+                          <Trash size={16} color={COLORS.red} />
                           <Text
                             style={[
                               styles.pillButtonText,
@@ -1439,7 +1352,7 @@ export default function FingerprintModal({
                     accessibilityRole="button"
                     accessibilityLabel="Add one photo">
                     <View style={styles.slotIcon}>
-                      <CameraIcon size={22} color={COLORS.green} />
+                      <Camera size={22} color={COLORS.green} />
                     </View>
                     <View style={styles.slotText}>
                       <Text style={styles.slotTitle}>Add a photo</Text>
@@ -1468,11 +1381,11 @@ export default function FingerprintModal({
             <View style={styles.footer}>
               <View style={styles.captionRow}>
                 {captionIcon === 'check' ? (
-                  <CheckIcon size={16} color={captionColor} strokeWidth={2.4} />
+                  <Check size={16} color={captionColor} strokeWidth={2.4} />
                 ) : captionIcon === 'alert' ? (
-                  <AlertIcon size={16} color={captionColor} />
+                  <AlertCircle size={16} color={captionColor} />
                 ) : (
-                  <InfoIcon size={16} color={captionColor} />
+                  <Info size={16} color={captionColor} />
                 )}
                 <Text style={[styles.caption, { color: captionColor }]}>
                   {captionText}
