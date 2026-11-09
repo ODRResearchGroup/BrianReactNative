@@ -12,6 +12,7 @@ import {
   SensorValues,
   readSensor,
 } from '../../sensors';
+import { CHANNEL_COLORS } from '../SmellWalk/consts';
 
 export type RadarPoint = { x: string; y: number };
 export type RadarSeries = {
@@ -22,15 +23,15 @@ export type RadarSeries = {
 };
 
 export const LIVE_COLOR = {
-  fill: 'hsla(210, 100%, 50%, 0.35)',
-  stroke: 'hsla(210, 100%, 40%, 1)',
+  fill: `${CHANNEL_COLORS[6]}33`,
+  stroke: CHANNEL_COLORS[6],
 };
 
 export const seriesColor = (index: number) => {
-  const hue = (index * 137.508) % 360;
+  const stroke = CHANNEL_COLORS[index % 10];
   return {
-    fill: `hsla(${hue}, 80%, 65%, 0.35)`,
-    stroke: `hsla(${hue}, 85%, 45%, 1)`,
+    fill: `${stroke}33`,
+    stroke,
   };
 };
 

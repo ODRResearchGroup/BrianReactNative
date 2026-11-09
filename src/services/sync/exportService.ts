@@ -274,3 +274,34 @@ export async function exportSmellWalkZip(walkId: string): Promise<string> {
   });
   return zipPath;
 }
+
+export async function exportFingerprintsJson(
+  fingerprints: unknown[],
+): Promise<string> {
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const fileName = `fingerprints_${timestamp}.json`;
+  const jsonPath = `${RNFS.DocumentDirectoryPath}/${fileName}`;
+
+  await RNFS.writeFile(jsonPath, JSON.stringify(fingerprints, null, 2), 'utf8');
+
+  if (Platform.OS === 'android') {
+    return ReactNativeBlobUtil.MediaCollection.copyToMediaStore(
+      {
+        name: fileName,
+        parentFolder: 'SmellWalk',
+        mimeType: 'application/json',
+      },
+      'Download',
+      jsonPath,
+    );
+  }
+
+  await Share.open({
+    title: 'Save fingerprints',
+    url: `file://${jsonPath}`,
+    type: 'application/json',
+    saveToFiles: true,
+    failOnCancel: false,
+  });
+  return jsonPath;
+}
