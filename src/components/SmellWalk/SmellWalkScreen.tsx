@@ -90,6 +90,7 @@ export default function SmellWalkScreen() {
     startSmellWalk,
     stopSmellWalk,
     walkId,
+    ingestReadings,
   } = useInfluxDB();
   const navigation = useNavigation<NavigationProp<{ Device: undefined }>>();
   const [mapVisible, setMapVisible] = useState(false);
@@ -167,6 +168,21 @@ export default function SmellWalkScreen() {
 
     return () => clearInterval(id);
   }, []);
+
+  useEffect(() => {
+    if (!isSmellWalkActive) {
+      return;
+    }
+
+    const id = setInterval(() => {
+      ingestReadings(
+        valuesRef.current as Record<string, unknown>,
+        connectedDevice?.name ?? null,
+      );
+    }, 1000);
+
+    return () => clearInterval(id);
+  }, [isSmellWalkActive, ingestReadings, connectedDevice?.name]);
 
   useFocusEffect(
     useCallback(() => {
