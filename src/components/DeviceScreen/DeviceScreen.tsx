@@ -487,7 +487,6 @@ export default function DeviceScreen() {
         onPress: goToNext,
         disabled: false,
         loading: false,
-        hint: 'Opens the Smell Walk screen',
         arrow: true,
       };
     }
@@ -841,7 +840,9 @@ export default function DeviceScreen() {
             <ArrowRight color="#fff" size={20} strokeWidth={2.5} />
           ) : null}
         </Pressable>
-        <Text style={styles.panelHint}>{primary.hint}</Text>
+        {!showDisconnect && (
+          <Text style={styles.panelHint}>{primary.hint}</Text>
+        )}
 
         {showSecondaryScan && (
           <Pressable
