@@ -7,6 +7,7 @@ import {
   BatteryMedium,
   BatteryWarning,
 } from 'lucide-react-native';
+import { COLORS } from '../../consts';
 
 type BatteryIndicatorProps = {
   percentage?: number;
@@ -26,12 +27,12 @@ export function BatteryIndicator({ percentage }: BatteryIndicatorProps) {
     boundedPercentage === undefined
       ? '#999'
       : boundedPercentage < 10
-      ? '#e53935'
+      ? COLORS.red
       : boundedPercentage < 30
-      ? '#f57c00'
+      ? COLORS.amber
       : boundedPercentage < 70
-      ? '#f9a825'
-      : '#34a853';
+      ? COLORS.yellow
+      : COLORS.green;
   const Icon =
     boundedPercentage === undefined
       ? Battery

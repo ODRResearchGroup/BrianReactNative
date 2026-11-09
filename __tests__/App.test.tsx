@@ -53,47 +53,27 @@ jest.mock('../src/services/influx/InfluxDBService', () => ({
   InfluxDBProvider: ({ children }: { children: React.ReactNode }) => children,
 }));
 
-jest.mock('../src/components/LiveData/LiveData', () => () => null);
-
 jest.mock(
-  '../src/components/FingerprintsHistory/FingerprintsHistory',
+  '../src/components/screens/FingerprintLiveData/FingerprintLiveDataScreen',
   () => () => null,
 );
 
 jest.mock(
-  '../src/components/MappedFingerprints/MappedFingerprints',
+  '../src/components/screens/SavedFingerprints/SavedFingerprintsScreen',
   () => () => null,
 );
 
 jest.mock(
-  '../src/components/AddAnnotation/AddAnnotationScreen',
+  '../src/components/screens/FingerprintMap/FingerprintMapScreen',
   () => () => null,
 );
 
-jest.mock('../src/components/AnnotationFeed/AnnotationFeed', () => () => null);
+jest.mock('../src/components/screens/Device/DeviceScreen', () => () => null);
 
 jest.mock(
-  '../src/components/AudioAnnotation/AudioAnnotationScreen',
+  '../src/components/screens/SmellWalk/SmellWalkScreen',
   () => () => null,
 );
-
-jest.mock('../src/components/DeviceScreen/DeviceScreen', () => () => null);
-
-jest.mock('../src/components/DataDisplay/DataDisplay', () => () => null);
-
-jest.mock(
-  '../src/components/EditAnnotationTags/EditAnnotationTagsScreen',
-  () => () => null,
-);
-
-jest.mock(
-  '../src/components/PhotoAnnotation/PhotoAnnotationScreen',
-  () => () => null,
-);
-
-jest.mock('../src/components/ShootPic/ShootPicScreen', () => () => null);
-
-jest.mock('../src/components/SmellWalk/SmellWalkScreen', () => () => null);
 
 jest.mock('../src/services/audio/audioProcessingPoller', () => ({
   runAudioProcessingPoller: jest.fn().mockResolvedValue(undefined),

@@ -15,41 +15,16 @@ import {
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { BLEProvider } from './BLEUniversal';
 import { BaselineProvider } from './components/common/BaselineContext';
-import FingerprintsHistory from './components/FingerprintsHistory/FingerprintsHistory';
-import LiveData from './components/LiveData/LiveData';
-import MappedFingerprints from './components/MappedFingerprints/MappedFingerprints';
-import SmellWalkScreen from './components/SmellWalk/SmellWalkScreen';
+import SmellWalkScreen from './components/screens/SmellWalk/SmellWalkScreen';
 import { InfluxDBProvider } from './services/influx/InfluxDBService';
 import { runSyncWorker } from './services/sync/syncWorker';
 import { checkAndPromptForAppUpdate } from './services/updates/appUpdater';
 import Mapbox from '@rnmapbox/maps';
 import Config from 'react-native-config';
-import DeviceScreen from './components/DeviceScreen/DeviceScreen';
-
-export type RootStackParamList = {
-  DataHome: undefined;
-  LiveData: undefined;
-  SmellWalk: undefined;
-  History: undefined;
-  Analysis: undefined;
-  AnnotationFeed: undefined;
-  AddAnnotation: { sensorRecordId?: string };
-  AudioAnnotation: { annotationIndex: number; sensorRecordId?: string };
-  ShootPic: { annotationIndex: number; sensorRecordId?: string };
-  PhotoAnnotation: {
-    annotationIndex: number;
-    photoUri: string;
-    timestamp: string;
-    capturedAtMs: number;
-    latitude: string;
-    longitude: string;
-    latitudeRaw: number | null;
-    longitudeRaw: number | null;
-    accuracyM: number | null;
-    sensorRecordId?: string;
-  };
-  EditAnnotationTags: { annotationId: string };
-};
+import SavedFingerprintsScreen from './components/screens/SavedFingerprints/SavedFingerprintsScreen';
+import DeviceScreen from './components/screens/Device/DeviceScreen';
+import FingerprintLiveDataScreen from './components/screens/FingerprintLiveData/FingerprintLiveDataScreen';
+import FingerprintMapScreen from './components/screens/FingerprintMap/FingerprintMapScreen';
 
 const Tab = createBottomTabNavigator();
 
@@ -127,7 +102,7 @@ export default function App() {
                       }}>
                       <Tab.Screen
                         name="Fingerprint"
-                        component={LiveData}
+                        component={FingerprintLiveDataScreen}
                         options={{ tabBarIcon: renderFingerprintIcon }}
                       />
                       <Tab.Screen
@@ -137,12 +112,12 @@ export default function App() {
                       />
                       <Tab.Screen
                         name="Saved"
-                        component={FingerprintsHistory}
+                        component={SavedFingerprintsScreen}
                         options={{ tabBarIcon: renderSavedIcon }}
                       />
                       <Tab.Screen
                         name="Map"
-                        component={MappedFingerprints}
+                        component={FingerprintMapScreen}
                         options={{ tabBarIcon: renderMapIcon }}
                       />
                       <Tab.Screen

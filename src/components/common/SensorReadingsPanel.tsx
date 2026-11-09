@@ -7,16 +7,9 @@ import {
   readSensor,
   sensorTitle,
 } from '../../sensors';
+import { COLORS } from '../../consts';
 
 const { width: screenWidth } = Dimensions.get('window');
-
-const COLORS = {
-  bg: '#f6f6f3',
-  surface: '#ffffff',
-  border: '#e4e4df',
-  ink: '#1b1c1a',
-  muted: '#666963',
-};
 
 type Props = {
   readings: SensorValues;

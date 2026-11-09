@@ -1,6 +1,6 @@
 import React from 'react';
 import { render } from '@testing-library/react-native';
-import SmellWalkScreen from '../src/components/SmellWalk/SmellWalkScreen';
+import SmellWalkScreen from '../src/components/screens/SmellWalk/SmellWalkScreen';
 
 const mockActivateKeepAwake = jest.fn();
 const mockDeactivateKeepAwake = jest.fn();

@@ -9,20 +9,11 @@ import {
   SafeAreaView,
 } from 'react-native';
 import { MapView, Camera, ShapeSource, CircleLayer } from '@rnmapbox/maps';
-import Svg, { Path } from 'react-native-svg';
 import SensorReadingsPanel from './SensorReadingsPanel';
 import type { SavedFingerprintData } from '../../types/fingerprintTypes';
 import CustomRadarChart, { gasSeries } from './CustomRadarChart';
-
-const COLORS = {
-  bg: '#f6f6f3',
-  surface: '#ffffff',
-  border: '#e4e4df',
-  ink: '#1b1c1a',
-  muted: '#666963',
-  green: '#1f5c3f',
-  greenTint: '#e6efe9',
-};
+import { COLORS } from '../../consts';
+import { ChevronRight, ChevronUp } from 'lucide-react-native';
 
 const locationPointStyle = {
   circleColor: '#ff7043',
@@ -43,20 +34,6 @@ const capturedLabel = (ts: unknown) => {
     ? `Captured today, ${time}`
     : `Captured ${d.toLocaleDateString()}, ${time}`;
 };
-
-const ChevronIcon = ({ size = 18, color = COLORS.green }) => (
-  <Svg
-    width={size}
-    height={size}
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke={color}
-    strokeWidth={2}
-    strokeLinecap="round"
-    strokeLinejoin="round">
-    <Path d="m9 18 6-6-6-6" />
-  </Svg>
-);
 
 interface FingerprintDetailViewProps {
   data: SavedFingerprintData;
@@ -127,11 +104,12 @@ export default function FingerprintDetailView({
               <Text style={styles.chartLinkText}>
                 {showChart ? 'Hide' : 'Full data'}
               </Text>
-              <View
-                style={{
-                  transform: [{ rotate: showChart ? '-90deg' : '0deg' }],
-                }}>
-                <ChevronIcon />
+              <View>
+                {showChart ? (
+                  <ChevronUp size={16} color={COLORS.green} />
+                ) : (
+                  <ChevronRight size={16} color={COLORS.green} />
+                )}
               </View>
             </TouchableOpacity>
           </View>
@@ -293,6 +271,7 @@ const styles = StyleSheet.create({
   chartLink: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     minHeight: 44,
     paddingLeft: 8,
   },
