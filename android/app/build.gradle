@@ -108,16 +108,18 @@ android {
         }
     }
     buildTypes {
-        debug {
-            applicationIdSuffix ".debug"
-            signingConfig signingConfigs.debug
-        }
-        release {
-            signingConfig System.getenv("KEYSTORE_PATH") ? signingConfigs.release : signingConfigs.debug
-            minifyEnabled enableProguardInReleaseBuilds
-            proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
-        }
+    debug {
+        applicationIdSuffix ".debug"
+        signingConfig signingConfigs.debug
+        resValue "string", "app_name", "[DEV] Brian e-Nose"
     }
+    release {
+        signingConfig System.getenv("KEYSTORE_PATH") ? signingConfigs.release : signingConfigs.debug
+        minifyEnabled enableProguardInReleaseBuilds
+        proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
+        resValue "string", "app_name", "Brian e-Nose"
+    }
+}
 }
 
 dependencies {
