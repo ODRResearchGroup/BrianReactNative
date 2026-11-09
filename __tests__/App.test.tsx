@@ -77,7 +77,7 @@ jest.mock(
   () => () => null,
 );
 
-jest.mock('../src/components/BLE/BLEScreen', () => () => null);
+jest.mock('../src/components/DeviceScreen/DeviceScreen', () => () => null);
 
 jest.mock('../src/components/DataDisplay/DataDisplay', () => () => null);
 
