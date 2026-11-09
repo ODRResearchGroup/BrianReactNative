@@ -51,7 +51,7 @@ src/
   hooks/                      useLiveLocation, usePressAnimation
   components/
     BLE/BLEScreen             device list, connect, enables notifications
-    LiveData/                 live radar + mini plots; 15 s averaged fingerprint (saves to AsyncStorage)
+    FingerprintLiveDataScreen/                 live radar + mini plots; 15 s averaged fingerprint (saves to AsyncStorage)
     SmellWalk/                start/stop walk, live map, fingerprint button
     common/FingerprintModal   fingerprint form: title, description, photo, audio; saves to SQLite + sync queue
     ...                       annotation, photo, history, map, analysis screens
@@ -104,7 +104,7 @@ Don't change these without a coordinated firmware change.
 
 ## Known problems and gotchas
 
-- **Only 8 of the 11 gas channels and none of the environmental channels are used** (#26). The 8-sensor list is hard-coded in `BLEScreen.tsx`, `InfluxDBService.tsx`, `fingerprintTypes.ts`, `LiveData.tsx`, `SmellWalkScreen.tsx`, `FingerprintModal.tsx`, `db.ts`, `exportService.ts` and `sensorRecordUpload.ts`. Prefer a single sensor registry over adding to each list.
+- **Only 8 of the 11 gas channels and none of the environmental channels are used** (#26). The 8-sensor list is hard-coded in `BLEScreen.tsx`, `InfluxDBService.tsx`, `fingerprintTypes.ts`, `FingerprintLiveDataScreen.tsx`, `SmellWalkScreen.tsx`, `FingerprintModal.tsx`, `db.ts`, `exportService.ts` and `sensorRecordUpload.ts`. Prefer a single sensor registry over adding to each list.
 - Live values are looked up by **display label**, including the misspelling `'Voletile Organic Compounds'`. Don't "fix" the spelling in one place only.
 - **Influx writes were removed** in commit 32d4e58; `InfluxDBClient` is unused (#27).
 - **Missing readings are stored as `0`** (`valueFor()` in `InfluxDBService`). Missing must be `null`/omitted.

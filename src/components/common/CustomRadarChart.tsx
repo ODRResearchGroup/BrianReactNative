@@ -12,7 +12,7 @@ import {
   SensorValues,
   readSensor,
 } from '../../sensors';
-import { CHANNEL_COLORS } from '../SmellWalk/consts';
+import { CHANNEL_COLORS } from '../../consts';
 
 export type RadarPoint = { x: string; y: number };
 export type RadarSeries = {

@@ -16,9 +16,11 @@ import {
   useCameraFormat,
   useCameraPermission,
 } from 'react-native-vision-camera';
+import type { CameraRuntimeError } from 'react-native-vision-camera';
 import ImageEditor from '@react-native-community/image-editor';
 import { unlink } from 'react-native-fs';
 import Svg, { Path, Line, Circle } from 'react-native-svg';
+import { COLORS } from '../../consts';
 
 interface CameraCaptureProps {
   onClose: () => void;
@@ -43,21 +45,7 @@ const FLASH_LABEL: Record<FlashMode, string> = {
   off: 'Off',
 };
 
-const COLORS = {
-  bg: '#101210',
-  surface: 'rgba(255,255,255,0.14)',
-  white: '#ffffff',
-  muted: 'rgba(255,255,255,0.78)',
-  green: '#2a7a53',
-  hintBg: 'rgba(16,18,16,0.62)',
-};
-
 const stripScheme = (p: string) => p.replace(/^file:\/\//, '');
-
-const getImageSize = (uri: string) =>
-  new Promise<{ width: number; height: number }>((resolve, reject) => {
-    Image.getSize(uri, (width, height) => resolve({ width, height }), reject);
-  });
 
 const removeFile = async (path: string | null | undefined) => {
   if (!path) {
@@ -68,6 +56,25 @@ const removeFile = async (path: string | null | undefined) => {
   } catch {
     // Already gone, nothing to clean up.
   }
+};
+
+const cropCenterSquare = async (uri: string, w: number, h: number) => {
+  const side = Math.min(w, h);
+  const out = Math.min(side, OUTPUT_SIZE);
+
+  const x = Math.max(0, Math.round((w - side) / 2));
+  const y = Math.max(0, Math.round((h - side) / 2));
+
+  const cropped: any = await ImageEditor.cropImage(uri, {
+    offset: { x, y },
+    size: { width: side, height: side },
+    displaySize: { width: out, height: out },
+    resizeMode: 'cover',
+    format: 'jpeg',
+    quality: JPEG_QUALITY,
+  });
+
+  return typeof cropped === 'string' ? cropped : (cropped.uri as string);
 };
 
 type IconProps = { size?: number; color?: string; strokeWidth?: number };
@@ -140,9 +147,8 @@ export default function CameraCapture({
   const [flash, setFlash] = useState<FlashMode>('auto');
 
   const device = useCameraDevice(position);
-  const hasOtherCamera = useCameraDevice(
-    position === 'back' ? 'front' : 'back',
-  );
+  const hasOtherCamera =
+    useCameraDevice(position === 'back' ? 'front' : 'back') != null;
 
   const format = useCameraFormat(device, [
     { photoAspectRatio: 4 / 3 },
@@ -154,6 +160,8 @@ export default function CameraCapture({
   const [isCapturing, setIsCapturing] = useState(false);
   const [reviewPath, setReviewPath] = useState<string | null>(null);
 
+  const [isReady, setIsReady] = useState(false);
+
   const pendingPathRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -162,6 +170,10 @@ export default function CameraCapture({
     }
   }, [hasPermission, requestPermission]);
 
+  useEffect(() => {
+    setIsReady(false);
+  }, [device?.id]);
+
   useEffect(
     () => () => {
       removeFile(pendingPathRef.current);
@@ -169,8 +181,12 @@ export default function CameraCapture({
     [],
   );
 
+  const handleCameraError = useCallback((error: CameraRuntimeError) => {
+    console.error('Camera error:', error.code, error.message);
+  }, []);
+
   const takePhoto = useCallback(async () => {
-    if (isCapturing || !cameraRef.current || !device) {
+    if (isCapturing || !isReady || !cameraRef.current || !device) {
       return;
     }
 
@@ -187,24 +203,19 @@ export default function CameraCapture({
       originalPath = photo.path;
       const sourceUri = `file://${stripScheme(photo.path)}`;
 
-      const { width: w, height: h } = await getImageSize(sourceUri);
-      const side = Math.min(w, h);
-      const out = Math.min(side, OUTPUT_SIZE);
+      const rotated =
+        photo.orientation === 'portrait' ||
+        photo.orientation === 'portrait-upside-down';
+      const w = rotated ? photo.height : photo.width;
+      const h = rotated ? photo.width : photo.height;
 
-      const cropped: any = await ImageEditor.cropImage(sourceUri, {
-        offset: {
-          x: Math.round((w - side) / 2),
-          y: Math.round((h - side) / 2),
-        },
-        size: { width: side, height: side },
-        displaySize: { width: out, height: out },
-        resizeMode: 'cover',
-        format: 'jpeg',
-        quality: JPEG_QUALITY,
-      });
-
-      const croppedUri: string =
-        typeof cropped === 'string' ? cropped : cropped.uri;
+      let croppedUri: string;
+      try {
+        croppedUri = await cropCenterSquare(sourceUri, w, h);
+      } catch (firstError) {
+        console.warn('Crop failed, retrying with swapped size:', firstError);
+        croppedUri = await cropCenterSquare(sourceUri, h, w);
+      }
 
       pendingPathRef.current = stripScheme(croppedUri);
       setReviewPath(pendingPathRef.current);
@@ -215,7 +226,7 @@ export default function CameraCapture({
       removeFile(originalPath);
       setIsCapturing(false);
     }
-  }, [device, flash, isCapturing]);
+  }, [device, flash, isCapturing, isReady]);
 
   const retake = useCallback(async () => {
     const path = pendingPathRef.current;
@@ -293,6 +304,7 @@ export default function CameraCapture({
   }
 
   const reviewing = reviewPath !== null;
+  const shutterDisabled = isCapturing || !isReady;
 
   return (
     <SafeAreaView style={styles.root}>
@@ -338,6 +350,8 @@ export default function CameraCapture({
             isActive={!reviewing}
             resizeMode="cover"
             style={StyleSheet.absoluteFill}
+            onInitialized={() => setIsReady(true)}
+            onError={handleCameraError}
           />
 
           {reviewing && (
@@ -349,7 +363,7 @@ export default function CameraCapture({
             />
           )}
 
-          {isCapturing && (
+          {(isCapturing || (!isReady && !reviewing)) && (
             <View style={styles.processing}>
               <ActivityIndicator size="large" color={COLORS.white} />
             </View>
@@ -389,8 +403,8 @@ export default function CameraCapture({
 
           <TouchableOpacity
             onPress={takePhoto}
-            disabled={isCapturing}
-            style={[styles.shutter, isCapturing && styles.shutterBusy]}
+            disabled={shutterDisabled}
+            style={[styles.shutter, shutterDisabled && styles.shutterBusy]}
             accessibilityRole="button"
             accessibilityLabel="Take photo">
             <View style={styles.shutterInner} />
@@ -419,7 +433,7 @@ export default function CameraCapture({
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: COLORS.bg,
+    backgroundColor: COLORS.ink,
   },
 
   header: {
@@ -433,14 +447,14 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 16,
     fontWeight: '500',
-    color: COLORS.white,
+    color: COLORS.bg,
   },
 
   roundButton: {
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: COLORS.surface,
+    backgroundColor: COLORS.muted,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -459,7 +473,7 @@ const styles = StyleSheet.create({
     gap: 6,
     paddingHorizontal: 12,
     borderRadius: 22,
-    backgroundColor: COLORS.surface,
+    backgroundColor: COLORS.muted,
   },
 
   flashLabel: {

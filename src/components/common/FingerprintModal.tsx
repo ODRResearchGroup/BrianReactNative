@@ -73,6 +73,7 @@ import 'react-native-get-random-values';
 
 import { v4 as uuidv4 } from 'uuid';
 import { SensorReadings } from '../../types/fingerprintTypes';
+import { COLORS } from '../../consts';
 
 type MicPhase = 'idle' | 'recording' | 'uploading' | 'processing' | 'error';
 type PlayPhase = 'stopped' | 'playing' | 'paused';
@@ -94,23 +95,6 @@ interface FingerprintModalProps {
 }
 
 const MAX_RECORDING_SECONDS = 60;
-
-const COLORS = {
-  bg: '#f6f6f3',
-  surface: '#ffffff',
-  border: '#e4e4df',
-  ink: '#1b1c1a',
-  muted: '#666963',
-  green: '#1f5c3f',
-  greenTint: '#e6efe9',
-  red: '#b3261e',
-  redTint: '#fbeae8',
-  recording: '#c62828',
-  dashed: '#bfc4bb',
-  disabledBg: '#e3e5e0',
-  disabledText: '#7d7f79',
-  wave: '#b8bdb4',
-};
 
 const fmt = (ms: number) => {
   const s = Math.max(0, Math.floor(ms / 1000));

@@ -13,16 +13,7 @@ import Svg, { Path } from 'react-native-svg';
 import SensorReadingsPanel from './SensorReadingsPanel';
 import type { SavedFingerprintData } from '../../types/fingerprintTypes';
 import CustomRadarChart, { gasSeries } from './CustomRadarChart';
-
-const COLORS = {
-  bg: '#f6f6f3',
-  surface: '#ffffff',
-  border: '#e4e4df',
-  ink: '#1b1c1a',
-  muted: '#666963',
-  green: '#1f5c3f',
-  greenTint: '#e6efe9',
-};
+import { COLORS } from '../../consts';
 
 const locationPointStyle = {
   circleColor: '#ff7043',
