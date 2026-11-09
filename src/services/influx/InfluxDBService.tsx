@@ -10,7 +10,14 @@ import { Platform } from 'react-native';
 import Geolocation, { GeoPosition } from 'react-native-geolocation-service';
 
 import { eventEmitter } from '../../BLEUniversal';
-import { SENSOR_BY_CHARACTERISTIC_UUID } from '../../sensors';
+import {
+  ENV_FRAME_CHARACTERISTIC_UUID,
+  ENV_SENSOR_DEFINITIONS,
+  GAS_FRAME_CHARACTERISTIC_UUID,
+  GAS_SENSOR_DEFINITIONS,
+  SENSOR_BY_CHARACTERISTIC_UUID,
+  SENSOR_DEFINITIONS,
+} from '../../sensors';
 import { BLEDataUpdated, SensorEvent } from '../../types/events';
 
 import {
@@ -56,6 +63,15 @@ type InfluxDBContextType = {
     deviceName?: string | null,
   ) => Promise<void>;
   stopSmellWalk: () => Promise<string | null>;
+  /**
+   * Feeds the latest decoded sensor values (keyed by sensor registry key)
+   * into the active walk. Safe to call often; does nothing when no walk is
+   * active.
+   */
+  ingestReadings: (
+    values: Record<string, unknown>,
+    deviceId?: string | null,
+  ) => void;
 };
 
 const InfluxDBContext = createContext<InfluxDBContextType | undefined>(
@@ -90,27 +106,12 @@ function toLiveLocation(position: GeoPosition): LiveLocation {
 }
 
 /**
- * Maps the canonical sensor registry keys to the field names used by
- * SQLite and InfluxDB.
+ * The sensor registry keys (CH4, NO2, TempC, ...) are used directly as the
+ * InfluxDB measurement names. Only keys defined in the registry are written.
  */
-const INFLUX_FIELD_BY_SENSOR_KEY: Record<string, string> = {
-  CH4: 'ch4',
-  NH3: 'nh3',
-  HCHO: 'hcho',
-  VOC: 'voc',
-  Odour: 'odour',
-  H2S: 'h2s',
-  Etoh: 'etoh',
-  NO2: 'no2',
-  CO: 'co',
-  Smoke: 'smoke',
-  H2: 'h2',
-  TempC: 'temperature',
-  PressureHPa: 'pressure',
-  HumidityPct: 'humidity',
-  AltitudeM: 'altitude',
-  GasResOhm: 'bme680_gas_resistance',
-};
+const VALID_SENSOR_KEYS = new Set<string>(
+  SENSOR_DEFINITIONS.map(sensor => sensor.key),
+);
 
 let influxClient: InfluxClient | null = null;
 
@@ -122,47 +123,61 @@ function getInfluxClient(): InfluxClient {
   return influxClient;
 }
 
-function buildInfluxPoint(
+/**
+ * Builds one InfluxDB point per sensor reading.
+ *
+ *  - measurement: the sensor registry key (CH4, NH3, TempC, ...)
+ *  - tags:        device_name, walk_id, date (day)  -> filterable
+ *  - fields:      value (+ latitude / longitude / accuracy_m)
+ */
+function buildInfluxPoints(
   walkId: string,
-  deviceId: string,
+  deviceName: string,
   readings: Record<string, number>,
   location: LiveLocation | null,
   recordedAt: number,
-): InfluxPoint {
-  const fields: Record<string, string | number | boolean> = {};
+): InfluxPoint[] {
+  const tags = {
+    device_name: deviceName || 'unknown',
+    walk_id: walkId,
+    date: DateTime.fromMillis(recordedAt).toFormat('yyyy-MM-dd'),
+  };
+
+  const timestamp = recordedAt * 1_000_000;
+  const points: InfluxPoint[] = [];
 
   Object.entries(readings).forEach(([sensorKey, value]) => {
-    const fieldName = INFLUX_FIELD_BY_SENSOR_KEY[sensorKey];
-
-    if (!fieldName) {
+    if (!VALID_SENSOR_KEYS.has(sensorKey)) {
       return;
     }
+
+    const measurement = sensorKey;
 
     if (typeof value !== 'number' || !Number.isFinite(value)) {
       return;
     }
 
-    fields[fieldName] = value;
+    const fields: Record<string, string | number | boolean> = { value };
+
+    // Position travels with each reading so it can be mapped on its own.
+    if (location) {
+      fields.latitude = location.latitude;
+      fields.longitude = location.longitude;
+
+      if (location.accuracyM !== null && Number.isFinite(location.accuracyM)) {
+        fields.accuracy_m = location.accuracyM;
+      }
+    }
+
+    points.push({
+      measurement,
+      tags,
+      fields,
+      timestamp,
+    });
   });
 
-  if (location) {
-    fields.latitude = location.latitude;
-    fields.longitude = location.longitude;
-
-    if (location.accuracyM !== null && Number.isFinite(location.accuracyM)) {
-      fields.accuracy_m = location.accuracyM;
-    }
-  }
-
-  return {
-    measurement: 'smell_walk_point',
-    tags: {
-      walk_id: walkId,
-      device_id: deviceId || 'unknown',
-    },
-    fields,
-    timestamp: recordedAt * 1_000_000,
-  };
+  return points;
 }
 
 export const InfluxDBProvider = ({
@@ -181,7 +196,10 @@ export const InfluxDBProvider = ({
 
   const walkReadingsRef = useRef<Record<string, number>>({});
   const walkDeviceIdRef = useRef('unknown');
+  const walkDeviceNameRef = useRef('unknown');
   const lastWalkFlushAtRef = useRef(0);
+  const lastSyncedDeviceIdRef = useRef<string | null>(null);
+  const lastEmptyFlushWarnAtRef = useRef(0);
 
   const walkTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -303,7 +321,18 @@ export const InfluxDBProvider = ({
     const currentWalkId = walkIdRef.current;
     const readings = { ...walkReadingsRef.current };
 
-    if (!currentWalkId || Object.keys(readings).length === 0) {
+    if (!currentWalkId) {
+      return;
+    }
+
+    if (Object.keys(readings).length === 0) {
+      const now = Date.now();
+      if (now - lastEmptyFlushWarnAtRef.current > 15000) {
+        lastEmptyFlushWarnAtRef.current = now;
+        console.warn(
+          `Smell walk ${currentWalkId} is active but no sensor readings have been received yet, so nothing is saved or uploaded.`,
+        );
+      }
       return;
     }
 
@@ -316,6 +345,7 @@ export const InfluxDBProvider = ({
     const currentLocation = latestLocationRef.current;
     const recordedAt = Date.now();
     const deviceId = walkDeviceIdRef.current || 'unknown';
+    const deviceName = walkDeviceNameRef.current || 'unknown';
 
     try {
       await insertSensorRecord({
@@ -365,23 +395,25 @@ export const InfluxDBProvider = ({
       console.log(`Stored smell walk sample ${currentWalkId}`);
 
       try {
-        const point = buildInfluxPoint(
+        const points = buildInfluxPoints(
           currentWalkId,
-          deviceId,
+          deviceName,
           readings,
           currentLocation,
           recordedAt,
         );
 
-        if (Object.keys(point.fields).length > 0) {
-          await getInfluxClient().writeTimeseriesPoint(point);
+        if (points.length > 0) {
+          await Promise.all(
+            points.map(point => getInfluxClient().writeTimeseriesPoint(point)),
+          );
 
           console.log(
-            `Uploaded smell walk sample ${currentWalkId} to InfluxDB`,
+            `Uploaded ${points.length} readings for ${currentWalkId} to InfluxDB`,
           );
         } else {
           console.warn(
-            `Skipping InfluxDB write for ${currentWalkId}: no valid sensor fields`,
+            `Skipping InfluxDB write for ${currentWalkId}: no valid sensor readings`,
           );
         }
       } catch (influxError) {
@@ -401,6 +433,80 @@ export const InfluxDBProvider = ({
       throw error;
     }
   }, []);
+
+  /**
+   * Single entry point for readings during a walk, used both by the BLE
+   * event path and by ingestReadings.
+   */
+  const applyReadings = useCallback(
+    (readings: Record<string, unknown>, deviceId?: string | null) => {
+      if (!isSmellWalkActiveRef.current) {
+        return;
+      }
+
+      const validReadings: Record<string, number> = {};
+      Object.entries(readings).forEach(([sensorKey, value]) => {
+        if (typeof value === 'number' && Number.isFinite(value)) {
+          validReadings[sensorKey] = value;
+        }
+      });
+
+      if (Object.keys(validReadings).length === 0) {
+        return;
+      }
+
+      const resolvedDeviceId = deviceId || walkDeviceIdRef.current || 'unknown';
+      walkDeviceIdRef.current = resolvedDeviceId;
+
+      // If no device name was supplied when the walk started (or the walk was
+      // restored), fall back to the device id.
+      if (walkDeviceNameRef.current === 'unknown') {
+        walkDeviceNameRef.current = resolvedDeviceId;
+      }
+
+      if (
+        walkIdRef.current &&
+        resolvedDeviceId !== 'unknown' &&
+        lastSyncedDeviceIdRef.current !== resolvedDeviceId
+      ) {
+        lastSyncedDeviceIdRef.current = resolvedDeviceId;
+        updateWalkDevice(
+          walkIdRef.current,
+          resolvedDeviceId,
+          resolvedDeviceId,
+        ).catch(error => {
+          console.warn('Failed to update walk device metadata:', error);
+        });
+      }
+
+      Object.assign(walkReadingsRef.current, validReadings);
+
+      const now = Date.now();
+      if (now - lastWalkFlushAtRef.current >= 5000) {
+        lastWalkFlushAtRef.current = now;
+        flushWalkData().catch(error => {
+          console.error('Error flushing background smell walk data:', error);
+        });
+      }
+    },
+    [flushWalkData],
+  );
+
+  const ingestReadings = useCallback(
+    (values: Record<string, unknown>, deviceId?: string | null) => {
+      const readings: Record<string, unknown> = {};
+
+      SENSOR_DEFINITIONS.forEach(sensor => {
+        const raw = values[sensor.key] ?? values[sensor.label];
+        if (raw !== undefined && raw !== null) {
+          readings[sensor.key] = raw;
+        }
+      });
+
+      applyReadings(readings, deviceId);
+    },
+    [applyReadings],
+  );
 
   const startWalkFlushTimer = useCallback(() => {
     if (walkTimerRef.current !== null) {
@@ -435,6 +541,9 @@ export const InfluxDBProvider = ({
         );
 
         walkIdRef.current = activeWalkId;
+        // The device name is not persisted; it is filled in again from the
+        // first BLE reading after the restore.
+        walkDeviceNameRef.current = 'unknown';
         isSmellWalkActiveRef.current = true;
 
         setWalkId(activeWalkId);
@@ -486,11 +595,14 @@ export const InfluxDBProvider = ({
       }
 
       const time = `${DateTime.now().toFormat('dd-MM-yy-HH-mm-ss')}`;
-      const nextWalkId = existingWalkId ?? `walk-${time}-${deviceName}`;
+      const nextWalkId =
+        existingWalkId ?? `walk-${time}-${deviceName ?? 'unknown'}`;
 
       walkIdRef.current = nextWalkId;
       walkReadingsRef.current = {};
       walkDeviceIdRef.current = 'unknown';
+      walkDeviceNameRef.current = deviceName ?? 'unknown';
+      lastSyncedDeviceIdRef.current = null;
       lastWalkFlushAtRef.current = Date.now();
 
       const now = Date.now();
@@ -561,6 +673,7 @@ export const InfluxDBProvider = ({
       });
 
       walkIdRef.current = null;
+      walkDeviceNameRef.current = 'unknown';
       lastWalkFlushAtRef.current = 0;
 
       setWalkId(null);
@@ -577,8 +690,76 @@ export const InfluxDBProvider = ({
    * characteristic UUIDs to sensor keys.
    */
   useEffect(() => {
+    const unrecognisedFrameWarned = new Set<string>();
+
+    /**
+     * The firmware sends all gas sensors in one frame characteristic and all
+     * environmental sensors in another. A frame is expected to arrive already
+     * decoded as an object keyed by sensor registry key (e.g. { CH4: 1.2 }).
+     * Sensor keys are looked up by name, so no byte order is assumed.
+     */
+    const handleFrameUpdate = (
+      event: BLEDataUpdated,
+      characteristicUUID: string,
+    ) => {
+      const expectedSensors =
+        characteristicUUID === GAS_FRAME_CHARACTERISTIC_UUID
+          ? GAS_SENSOR_DEFINITIONS
+          : ENV_SENSOR_DEFINITIONS;
+
+      const decoded = event.decodedValue as unknown;
+      const readings: Record<string, number> = {};
+      const units: Record<string, string> = {};
+
+      if (decoded && typeof decoded === 'object' && !Array.isArray(decoded)) {
+        const values = decoded as Record<string, unknown>;
+
+        expectedSensors.forEach(sensor => {
+          const raw = values[sensor.key] ?? values[sensor.label];
+          const value = typeof raw === 'number' ? raw : Number(raw);
+
+          if (raw !== undefined && raw !== null && Number.isFinite(value)) {
+            readings[sensor.key] = value;
+            units[sensor.key] = sensor.unit;
+          }
+        });
+      }
+
+      if (Object.keys(readings).length === 0) {
+        if (!unrecognisedFrameWarned.has(characteristicUUID)) {
+          unrecognisedFrameWarned.add(characteristicUUID);
+          console.warn(
+            `Unrecognised frame format for ${characteristicUUID}. Expected an object keyed by sensor key. Received:`,
+            JSON.stringify(event),
+          );
+        }
+        return;
+      }
+
+      const sensorEvent: SensorEvent = {
+        type: 'sensor_reading',
+        timestamp: event.timestamp,
+        source: event.source,
+        deviceId: event.deviceId,
+        olfactoryData: {
+          readings,
+          units,
+        },
+      };
+
+      eventEmitter.emit('sensor_reading', sensorEvent);
+    };
+
     const handleBLEUpdate = (event: BLEDataUpdated) => {
       const characteristicUUID = event.characteristicUUID.toLowerCase();
+
+      if (
+        characteristicUUID === GAS_FRAME_CHARACTERISTIC_UUID ||
+        characteristicUUID === ENV_FRAME_CHARACTERISTIC_UUID
+      ) {
+        handleFrameUpdate(event, characteristicUUID);
+        return;
+      }
 
       const sensor = SENSOR_BY_CHARACTERISTIC_UUID[characteristicUUID];
 
@@ -620,40 +801,15 @@ export const InfluxDBProvider = ({
       eventEmitter.emit('sensor_reading', sensorEvent);
     };
 
-    const handleSensorReading = async (event: SensorEvent) => {
-      console.log('InfluxDB Service: Sensor reading:', event);
-
+    const handleSensorReading = (event: SensorEvent) => {
       if (!isSmellWalkActiveRef.current || !event.olfactoryData?.readings) {
         return;
       }
 
-      walkDeviceIdRef.current = event.deviceId || event.source || 'unknown';
-
-      if (walkIdRef.current && walkDeviceIdRef.current !== 'unknown') {
-        updateWalkDevice(
-          walkIdRef.current,
-          walkDeviceIdRef.current,
-          walkDeviceIdRef.current,
-        ).catch(error => {
-          console.warn('Failed to update walk device metadata:', error);
-        });
-      }
-
-      Object.entries(event.olfactoryData.readings).forEach(
-        ([sensorKey, value]) => {
-          if (typeof value === 'number' && Number.isFinite(value)) {
-            walkReadingsRef.current[sensorKey] = value;
-          }
-        },
+      applyReadings(
+        event.olfactoryData.readings,
+        event.deviceId || event.source || null,
       );
-
-      const now = Date.now();
-      if (now - lastWalkFlushAtRef.current >= 5000) {
-        lastWalkFlushAtRef.current = now;
-        flushWalkData().catch(error => {
-          console.error('Error flushing background smell walk data:', error);
-        });
-      }
     };
 
     eventEmitter.on('ble_data_updated', handleBLEUpdate);
@@ -665,7 +821,7 @@ export const InfluxDBProvider = ({
 
       eventEmitter.off('sensor_reading', handleSensorReading);
     };
-  }, [flushWalkData]);
+  }, [applyReadings]);
 
   return (
     <InfluxDBContext.Provider
@@ -677,6 +833,7 @@ export const InfluxDBProvider = ({
         walkId,
         startSmellWalk,
         stopSmellWalk,
+        ingestReadings,
       }}>
       {children}
     </InfluxDBContext.Provider>
