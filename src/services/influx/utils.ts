@@ -30,7 +30,7 @@ const formatField = (value: string | number | boolean): string => {
     throw new Error(`Invalid Influx field value: ${value}`);
   }
 
-  return Number.isInteger(value) ? `${value}i` : `${value}`;
+  return `${value}`;
 };
 
 const buildTagString = (tags: TagSet): string =>

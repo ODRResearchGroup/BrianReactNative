@@ -77,6 +77,7 @@ const LOCATION_INTERVAL_MS = 500;
 const TRAIL_MIN_DISTANCE_M = 1;
 const TRAIL_MAX_ACCURACY_M = 30;
 const TRAIL_MAX_POINTS = 7200;
+const SMELL_WALK_MEASUREMENT = 'smell_walk_point';
 
 function distanceM(a: LiveLocation, b: LiveLocation): number {
   const R = 6371000;
@@ -127,40 +128,41 @@ function buildInfluxPoints(
     date: DateTime.fromMillis(recordedAt).toFormat('yyyy-MM-dd'),
   };
 
-  const timestamp = recordedAt * 1_000_000;
-  const points: InfluxPoint[] = [];
+  const fields: Record<string, string | number | boolean> = {};
 
   Object.entries(readings).forEach(([sensorKey, value]) => {
     if (!VALID_SENSOR_KEYS.has(sensorKey)) {
       return;
     }
 
-    const measurement = sensorKey;
-
     if (typeof value !== 'number' || !Number.isFinite(value)) {
       return;
     }
 
-    const fields: Record<string, string | number | boolean> = { value };
-
-    if (location) {
-      fields.latitude = location.latitude;
-      fields.longitude = location.longitude;
-
-      if (location.accuracyM !== null && Number.isFinite(location.accuracyM)) {
-        fields.accuracy_m = location.accuracyM;
-      }
-    }
-
-    points.push({
-      measurement,
-      tags,
-      fields,
-      timestamp,
-    });
+    fields[sensorKey] = value;
   });
 
-  return points;
+  if (Object.keys(fields).length === 0) {
+    return [];
+  }
+
+  if (location) {
+    fields.latitude = location.latitude;
+    fields.longitude = location.longitude;
+
+    if (location.accuracyM !== null && Number.isFinite(location.accuracyM)) {
+      fields.accuracy_m = location.accuracyM;
+    }
+  }
+
+  return [
+    {
+      measurement: SMELL_WALK_MEASUREMENT,
+      tags,
+      fields,
+      timestamp: recordedAt * 1_000_000,
+    },
+  ];
 }
 
 export const InfluxDBProvider = ({
@@ -391,7 +393,7 @@ export const InfluxDBProvider = ({
           );
 
           console.log(
-            `Uploaded ${points.length} readings for ${currentWalkId} to InfluxDB`,
+            `Uploaded smell walk points for ${currentWalkId} to InfluxDB`,
           );
         } else {
           console.warn(

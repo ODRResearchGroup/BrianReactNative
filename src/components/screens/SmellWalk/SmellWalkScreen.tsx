@@ -69,7 +69,10 @@ import {
   listInterruptedWalks,
   finalizeInterruptedWalk,
 } from '../../../services/database/db';
-import { useInfluxDB } from '../../../services/influx/InfluxDBService';
+import {
+  LiveLocation,
+  useInfluxDB,
+} from '../../../services/influx/InfluxDBService';
 import {
   ensureFullLocationAccess,
   locationAccessMessage,
@@ -80,6 +83,14 @@ import FingerprintModal from '../../common/FingerprintModal';
 import LiveLocationMap from '../../common/LiveLocationMap';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+
+const GPS_STALE_MS = 20000;
+const GPS_GRACE_MS = 8000;
+const GPS_CHECK_MS = 2000;
+
+function isGpsFresh(location: LiveLocation | null): boolean {
+  return location !== null && Date.now() - location.recordedAt <= GPS_STALE_MS;
+}
 
 export default function SmellWalkScreen() {
   const { characteristicValues, connectedDevice } = useBLE();
@@ -96,6 +107,9 @@ export default function SmellWalkScreen() {
   const [mapVisible, setMapVisible] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
   const [showConnectionModal, setShowConnectionModal] = useState(false);
+  const [showGpsModal, setShowGpsModal] = useState(false);
+  const [hasGps, setHasGps] = useState(false);
+  const [gpsGraceOver, setGpsGraceOver] = useState(false);
   const [showFingerprintModal, setShowFingerprintModal] = useState(false);
   const [showSensorSheet, setShowSensorSheet] = useState(false);
   const [didPromptResume, setDidPromptResume] = useState(false);
@@ -106,6 +120,44 @@ export default function SmellWalkScreen() {
 
   const valuesRef = useRef(characteristicValues);
   valuesRef.current = characteristicValues;
+
+  const locationRef = useRef(location);
+  locationRef.current = location;
+
+  const gpsPromptedRef = useRef(false);
+
+  useEffect(() => {
+    setHasGps(isGpsFresh(location));
+  }, [location]);
+
+  useEffect(() => {
+    const checkId = setInterval(() => {
+      setHasGps(isGpsFresh(locationRef.current));
+    }, GPS_CHECK_MS);
+    const graceId = setTimeout(() => setGpsGraceOver(true), GPS_GRACE_MS);
+
+    return () => {
+      clearInterval(checkId);
+      clearTimeout(graceId);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!gpsGraceOver) {
+      return;
+    }
+
+    if (hasGps) {
+      gpsPromptedRef.current = false;
+      setShowGpsModal(false);
+      return;
+    }
+
+    if (!gpsPromptedRef.current && !showConnectionModal) {
+      gpsPromptedRef.current = true;
+      setShowGpsModal(true);
+    }
+  }, [gpsGraceOver, hasGps, showConnectionModal]);
 
   const handleResumeWalk = useCallback(
     async (interruptedWalkId: string) => {
@@ -126,6 +178,11 @@ export default function SmellWalkScreen() {
             },
           ],
         );
+        return;
+      }
+
+      if (!isGpsFresh(locationRef.current)) {
+        setShowGpsModal(true);
         return;
       }
 
@@ -421,6 +478,11 @@ export default function SmellWalkScreen() {
       return;
     }
 
+    if (!isGpsFresh(locationRef.current)) {
+      setShowGpsModal(true);
+      return;
+    }
+
     try {
       await startSmellWalk(undefined, connectedDevice?.name);
     } catch (error) {
@@ -438,6 +500,28 @@ export default function SmellWalkScreen() {
     setShowConnectionModal(false);
     navigation.navigate('Device');
   };
+
+  const openGpsSettings = () => {
+    openLocationSettings().catch(error =>
+      console.error('Could not open location settings:', error),
+    );
+  };
+
+  const startLabel = isSmellWalkActive
+    ? 'End walk'
+    : !isConnected
+    ? 'Connect first'
+    : !hasGps
+    ? 'Waiting for GPS'
+    : 'Start walk';
+
+  const startHint = isSmellWalkActive
+    ? 'Asks to confirm, then stops recording and saves the walk'
+    : !isConnected
+    ? 'BRIAN e-Nose is not connected. Opens the device screen'
+    : !hasGps
+    ? 'GPS location is not available yet. Shows how to fix it'
+    : 'Begins recording sensor data and your GPS trail';
 
   return (
     <SafeAreaView style={styles.screen}>
@@ -481,22 +565,10 @@ export default function SmellWalkScreen() {
 
           <RoundAction
             tone={isSmellWalkActive ? 'danger' : 'primary'}
-            muted={!isSmellWalkActive && !isConnected}
-            label={
-              isSmellWalkActive
-                ? 'End walk'
-                : isConnected
-                ? 'Start walk'
-                : 'Connect first'
-            }
+            muted={!isSmellWalkActive && (!isConnected || !hasGps)}
+            label={startLabel}
             accessibilityLabel={isSmellWalkActive ? 'End walk' : 'Start walk'}
-            accessibilityHint={
-              isSmellWalkActive
-                ? 'Asks to confirm, then stops recording and saves the walk'
-                : isConnected
-                ? 'Begins recording sensor data and your GPS trail'
-                : 'BRIAN e-Nose is not connected. Opens the device screen'
-            }
+            accessibilityHint={startHint}
             onPress={
               isSmellWalkActive
                 ? confirmStopWalk
@@ -711,6 +783,46 @@ export default function SmellWalkScreen() {
               ]}
               onPress={goToDeviceScreen}>
               <Text style={styles.connectionModalButtonText}>Devices</Text>
+              <ArrowRight color="#fff" size={20} strokeWidth={2.5} />
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={showGpsModal && !showConnectionModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowGpsModal(false)}>
+        <View style={styles.connectionModalBackdrop}>
+          <View style={styles.connectionModalCard}>
+            <View style={styles.connectionModalHeader}>
+              <Text style={styles.connectionModalTitle}>
+                GPS signal not available
+              </Text>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Close GPS prompt"
+                style={styles.iconButton}
+                onPress={() => setShowGpsModal(false)}>
+                <X color={COLORS.ink} size={22} strokeWidth={2} />
+              </Pressable>
+            </View>
+            <Text style={styles.connectionModalText}>
+              Your location is not being recorded. Make sure location services
+              are turned on and you have a clear view of the sky. A walk can
+              only be started once GPS is working.
+            </Text>
+            <Pressable
+              accessibilityRole="button"
+              style={({ pressed }) => [
+                styles.connectionModalButton,
+                pressed && styles.pressed,
+              ]}
+              onPress={openGpsSettings}>
+              <Text style={styles.connectionModalButtonText}>
+                Location settings
+              </Text>
               <ArrowRight color="#fff" size={20} strokeWidth={2.5} />
             </Pressable>
           </View>
