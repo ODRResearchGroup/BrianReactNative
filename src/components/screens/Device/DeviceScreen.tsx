@@ -28,6 +28,7 @@ import { useBLE } from '../../../BLEUniversal';
 import {
   BATTERY_CHARACTERISTIC_DEFINITIONS,
   BOARD_STATUS_DEFINITIONS,
+  BoardStatusDefinition,
   CUSTOM_SERVICE_UUID,
   GAS_FRAME_CHARACTERISTIC_UUID,
   ENV_FRAME_CHARACTERISTIC_UUID,
@@ -43,6 +44,56 @@ const NEXT_SCREEN = 'Smell Walk';
 const MIN_SCAN_FEEDBACK_MS = 4000;
 
 const BLUETOOTH_BASE_UUID = '-0000-1000-8000-00805f9b34fb';
+
+type HardwareRowData = BoardStatusDefinition & { present: boolean };
+
+function HardwareRow({
+  board,
+  divided,
+}: {
+  board: HardwareRowData;
+  divided: boolean;
+}) {
+  return (
+    <View style={[styles.hwRow, divided && styles.rowDivider]}>
+      <View
+        style={[
+          styles.hwIcon,
+          {
+            backgroundColor: board.present
+              ? COLORS.greenTint
+              : COLORS.amberTint,
+          },
+        ]}>
+        {board.present ? (
+          <Check color={COLORS.green} size={16} strokeWidth={3} />
+        ) : (
+          <AlertTriangle color={COLORS.amber} size={16} />
+        )}
+      </View>
+      <View style={styles.deviceInfo}>
+        <Text style={styles.deviceName}>{board.label}</Text>
+        <Text style={styles.caption}>
+          {board.description ??
+            board.sensors.map(sensor => sensor.chartLabel).join(', ')}
+        </Text>
+
+        {!board.present && (
+          <Text style={styles.caption}>
+            Not responding. Check the connection on the board.
+          </Text>
+        )}
+      </View>
+      <Text
+        style={[
+          styles.hwStatus,
+          board.present ? styles.textGreen : styles.textAmber,
+        ]}>
+        {board.present ? 'Detected' : 'Missing'}
+      </Text>
+    </View>
+  );
+}
 
 function normalizeUuid(uuid: string): string {
   const value = uuid.toLowerCase().replace(/^0x/, '');
@@ -371,10 +422,8 @@ export default function DeviceScreen() {
       boardStatus === null || boardStatus === undefined
         ? []
         : BOARD_STATUS_DEFINITIONS.map(board => ({
-            bit: board.bit,
-            label: board.label,
+            ...board,
             present: isBoardStatusBitSet(boardStatus, board.bit),
-            sensors: board.sensors,
           })),
     [boardStatus],
   );
@@ -765,50 +814,27 @@ export default function DeviceScreen() {
                 detected
               </Text>
             </View>
-            <View style={styles.card}>
-              {boardRows.map((board, i) => (
+            {[
+              boardRows.filter(board => !board.separate),
+              boardRows.filter(board => board.separate),
+            ]
+              .filter(group => group.length > 0)
+              .map((group, groupIndex) => (
                 <View
-                  key={board.bit}
-                  style={[styles.hwRow, i > 0 && styles.rowDivider]}>
-                  <View
-                    style={[
-                      styles.hwIcon,
-                      {
-                        backgroundColor: board.present
-                          ? COLORS.greenTint
-                          : COLORS.amberTint,
-                      },
-                    ]}>
-                    {board.present ? (
-                      <Check color={COLORS.green} size={16} strokeWidth={3} />
-                    ) : (
-                      <AlertTriangle color={COLORS.amber} size={16} />
-                    )}
-                  </View>
-                  <View style={styles.deviceInfo}>
-                    <Text style={styles.deviceName}>{board.label}</Text>
-                    <Text style={styles.caption}>
-                      {board.sensors
-                        .map(sensor => sensor.chartLabel)
-                        .join(', ')}
-                    </Text>
-
-                    {!board.present && (
-                      <Text style={styles.caption}>
-                        Not responding. Check the connection on the board.
-                      </Text>
-                    )}
-                  </View>
-                  <Text
-                    style={[
-                      styles.hwStatus,
-                      board.present ? styles.textGreen : styles.textAmber,
-                    ]}>
-                    {board.present ? 'Detected' : 'Missing'}
-                  </Text>
+                  key={group[0].bit}
+                  style={[
+                    styles.card,
+                    groupIndex > 0 && styles.separatedHardwareCard,
+                  ]}>
+                  {group.map((board, index) => (
+                    <HardwareRow
+                      key={board.bit}
+                      board={board}
+                      divided={index > 0}
+                    />
+                  ))}
                 </View>
               ))}
-            </View>
           </View>
         )}
       </ScrollView>
@@ -973,6 +999,7 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   rowDivider: { borderTopWidth: 1, borderTopColor: COLORS.border },
+  separatedHardwareCard: { marginTop: 12 },
 
   deviceRow: {
     flexDirection: 'row',

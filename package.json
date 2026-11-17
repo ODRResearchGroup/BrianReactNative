@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "android": "react-native run-android --appIdSuffix debug",
-    "android:release": "react-native run-android --mode release",
+    "android:release": "react-native run-android --appIdSuffix debug --mode release",
     "ios": "react-native run-ios",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
