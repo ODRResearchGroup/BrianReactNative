@@ -1,6 +1,7 @@
 import {
   BATTERY_CHARACTERISTIC_DEFINITIONS,
   BATTERY_SERVICE_UUID,
+  BOARD_STATUS_DEFINITIONS,
   ENV_SENSOR_DEFINITIONS,
   GAS_SENSOR_DEFINITIONS,
   SENSOR_BY_CHARACTERISTIC_UUID,
@@ -20,6 +21,16 @@ describe('sensor registry', () => {
         sensor,
       );
     }
+  });
+
+  it('includes the LC709203 as a separate hardware status entry', () => {
+    expect(BOARD_STATUS_DEFINITIONS[4]).toMatchObject({
+      bit: 4,
+      label: 'LC709203 Battery Monitor',
+      description: 'Battery life sensor',
+      separate: true,
+      sensors: [],
+    });
   });
 
   it('defines the battery values using their firmware BLE formats', () => {

@@ -35,6 +35,7 @@ import {
 } from '../../../sensors';
 
 import SignalBars from './SignalBars';
+import { HardwareRow } from './ComponentCheck';
 import Dot from '../SmellWalk/components/Dot';
 import { COLORS } from '../../../consts';
 
@@ -371,10 +372,8 @@ export default function DeviceScreen() {
       boardStatus === null || boardStatus === undefined
         ? []
         : BOARD_STATUS_DEFINITIONS.map(board => ({
-            bit: board.bit,
-            label: board.label,
+            ...board,
             present: isBoardStatusBitSet(boardStatus, board.bit),
-            sensors: board.sensors,
           })),
     [boardStatus],
   );
@@ -765,50 +764,27 @@ export default function DeviceScreen() {
                 detected
               </Text>
             </View>
-            <View style={styles.card}>
-              {boardRows.map((board, i) => (
+            {[
+              boardRows.filter(board => !board.separate),
+              boardRows.filter(board => board.separate),
+            ]
+              .filter(group => group.length > 0)
+              .map((group, groupIndex) => (
                 <View
-                  key={board.bit}
-                  style={[styles.hwRow, i > 0 && styles.rowDivider]}>
-                  <View
-                    style={[
-                      styles.hwIcon,
-                      {
-                        backgroundColor: board.present
-                          ? COLORS.greenTint
-                          : COLORS.amberTint,
-                      },
-                    ]}>
-                    {board.present ? (
-                      <Check color={COLORS.green} size={16} strokeWidth={3} />
-                    ) : (
-                      <AlertTriangle color={COLORS.amber} size={16} />
-                    )}
-                  </View>
-                  <View style={styles.deviceInfo}>
-                    <Text style={styles.deviceName}>{board.label}</Text>
-                    <Text style={styles.caption}>
-                      {board.sensors
-                        .map(sensor => sensor.chartLabel)
-                        .join(', ')}
-                    </Text>
-
-                    {!board.present && (
-                      <Text style={styles.caption}>
-                        Not responding. Check the connection on the board.
-                      </Text>
-                    )}
-                  </View>
-                  <Text
-                    style={[
-                      styles.hwStatus,
-                      board.present ? styles.textGreen : styles.textAmber,
-                    ]}>
-                    {board.present ? 'Detected' : 'Missing'}
-                  </Text>
+                  key={group[0].bit}
+                  style={[
+                    styles.card,
+                    groupIndex > 0 && styles.separatedHardwareCard,
+                  ]}>
+                  {group.map((board, index) => (
+                    <HardwareRow
+                      key={board.bit}
+                      board={board}
+                      divided={index > 0}
+                    />
+                  ))}
                 </View>
               ))}
-            </View>
           </View>
         )}
       </ScrollView>
@@ -973,6 +949,7 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   rowDivider: { borderTopWidth: 1, borderTopColor: COLORS.border },
+  separatedHardwareCard: { marginTop: 12 },
 
   deviceRow: {
     flexDirection: 'row',
@@ -1003,23 +980,6 @@ const styles = StyleSheet.create({
     borderRadius: 5,
     backgroundColor: COLORS.green,
   },
-
-  hwRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    minHeight: 56,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-  },
-  hwIcon: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  hwStatus: { fontSize: 14 },
 
   panel: {
     backgroundColor: COLORS.surface,

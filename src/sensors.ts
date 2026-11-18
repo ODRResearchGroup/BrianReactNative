@@ -230,6 +230,8 @@ export type BoardStatusDefinition = {
   bit: number;
   label: string;
   sensors: SensorDefinition[];
+  description?: string;
+  separate?: boolean;
 };
 
 export const BOARD_STATUS_DEFINITIONS: readonly BoardStatusDefinition[] = [
@@ -254,6 +256,13 @@ export const BOARD_STATUS_DEFINITIONS: readonly BoardStatusDefinition[] = [
     sensors: SENSOR_DEFINITIONS.filter(
       sensor => sensor.board === 'environmental',
     ),
+  },
+  {
+    bit: 4,
+    label: 'LC709203 Battery Monitor',
+    sensors: [],
+    description: 'Battery life sensor',
+    separate: true,
   },
 ] as const;
 

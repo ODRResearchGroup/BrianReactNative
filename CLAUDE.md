@@ -100,7 +100,7 @@ Don't change these without a coordinated firmware change.
 
 (16-bit UUIDs expand to `0000XXXX-0000-1000-8000-00805f9b34fb`.)
 
-**Board status** (`sensors.ts` → `BOARD_STATUS_CHARACTERISTIC_UUID`/`BOARD_STATUS_DEFINITIONS`): bit _n_ set = that I2C board was detected at boot (bit 0/1/2 = ADS1/ADS2/ADS3, bit 3 = BME680). Not live — the firmware never re-checks after boot, so this won't catch a board failing mid-walk. Read once via `readBoardStatus()` right after connecting (see `BLEScreen.tsx`); it is not a `SENSOR_DEFINITIONS` entry since it isn't a notified sensor value. Battery characteristics are registered separately in `BATTERY_CHARACTERISTIC_DEFINITIONS` because their payload formats differ from sensor floats.
+**Board status** (`sensors.ts` → `BOARD_STATUS_CHARACTERISTIC_UUID`/`BOARD_STATUS_DEFINITIONS`): bit _n_ set = that I2C device was detected at boot (bit 0/1/2 = ADS1/ADS2/ADS3, bit 3 = BME680, bit 4 = LC709203F battery monitor). Not live — the firmware never re-checks after boot, so this won't catch a device failing mid-walk. Read once via `readBoardStatus()` right after connecting (see `BLEScreen.tsx`); it is not a `SENSOR_DEFINITIONS` entry since it isn't a notified sensor value. Battery characteristics are registered separately in `BATTERY_CHARACTERISTIC_DEFINITIONS` because their payload formats differ from sensor floats.
 
 ## Known problems and gotchas
 
