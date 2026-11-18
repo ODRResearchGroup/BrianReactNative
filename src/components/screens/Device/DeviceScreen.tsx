@@ -28,7 +28,6 @@ import { useBLE } from '../../../BLEUniversal';
 import {
   BATTERY_CHARACTERISTIC_DEFINITIONS,
   BOARD_STATUS_DEFINITIONS,
-  BoardStatusDefinition,
   CUSTOM_SERVICE_UUID,
   GAS_FRAME_CHARACTERISTIC_UUID,
   ENV_FRAME_CHARACTERISTIC_UUID,
@@ -36,6 +35,7 @@ import {
 } from '../../../sensors';
 
 import SignalBars from './SignalBars';
+import { HardwareRow } from './ComponentCheck';
 import Dot from '../SmellWalk/components/Dot';
 import { COLORS } from '../../../consts';
 
@@ -44,56 +44,6 @@ const NEXT_SCREEN = 'Smell Walk';
 const MIN_SCAN_FEEDBACK_MS = 4000;
 
 const BLUETOOTH_BASE_UUID = '-0000-1000-8000-00805f9b34fb';
-
-type HardwareRowData = BoardStatusDefinition & { present: boolean };
-
-function HardwareRow({
-  board,
-  divided,
-}: {
-  board: HardwareRowData;
-  divided: boolean;
-}) {
-  return (
-    <View style={[styles.hwRow, divided && styles.rowDivider]}>
-      <View
-        style={[
-          styles.hwIcon,
-          {
-            backgroundColor: board.present
-              ? COLORS.greenTint
-              : COLORS.amberTint,
-          },
-        ]}>
-        {board.present ? (
-          <Check color={COLORS.green} size={16} strokeWidth={3} />
-        ) : (
-          <AlertTriangle color={COLORS.amber} size={16} />
-        )}
-      </View>
-      <View style={styles.deviceInfo}>
-        <Text style={styles.deviceName}>{board.label}</Text>
-        <Text style={styles.caption}>
-          {board.description ??
-            board.sensors.map(sensor => sensor.chartLabel).join(', ')}
-        </Text>
-
-        {!board.present && (
-          <Text style={styles.caption}>
-            Not responding. Check the connection on the board.
-          </Text>
-        )}
-      </View>
-      <Text
-        style={[
-          styles.hwStatus,
-          board.present ? styles.textGreen : styles.textAmber,
-        ]}>
-        {board.present ? 'Detected' : 'Missing'}
-      </Text>
-    </View>
-  );
-}
 
 function normalizeUuid(uuid: string): string {
   const value = uuid.toLowerCase().replace(/^0x/, '');
@@ -1030,23 +980,6 @@ const styles = StyleSheet.create({
     borderRadius: 5,
     backgroundColor: COLORS.green,
   },
-
-  hwRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    minHeight: 56,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-  },
-  hwIcon: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  hwStatus: { fontSize: 14 },
 
   panel: {
     backgroundColor: COLORS.surface,
