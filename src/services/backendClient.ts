@@ -1,8 +1,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Config from 'react-native-config';
 
-export const INSTALLATION_ID_KEY = '@brian/backend-installation-id';
-export const SESSION_TOKEN_KEY = '@brian/backend-session-token';
+const INSTALLATION_ID_KEY = '@brian/backend-installation-id';
+const SESSION_TOKEN_KEY = '@brian/backend-session-token';
 
 function baseUrl(): string {
   const value = Config.BRIAN_BACKEND_URL?.replace(/\/$/, '');

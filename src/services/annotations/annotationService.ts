@@ -2,8 +2,6 @@ import { enqueueSync } from '../database/db';
 import { brianBackendFetch, BrianMedia } from '../brianBackend';
 import 'react-native-get-random-values';
 import { v4 as uuidv4 } from 'uuid';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { INSTALLATION_ID_KEY } from '../backendClient';
 
 export type DrawingStroke = {
   id: string;
@@ -60,8 +58,6 @@ export type AnnotationRecord = SaveAnnotationPayload & {
 export async function saveAnnotationRemote(
   payload: SaveAnnotationPayload,
 ): Promise<{ annotationId: string }> {
-  let installationId = await AsyncStorage.getItem(INSTALLATION_ID_KEY);
-
   const backendPayload = {
     ...payload,
     latitude: toCoordinate(payload.latitude ?? payload.latitudeRaw),
@@ -76,7 +72,6 @@ export async function saveAnnotationRemote(
       payload.audio ??
       payload.media?.find(item => item.role === 'audio')?.url ??
       null,
-    installationId: installationId,
   };
   const res = await brianBackendFetch('/api/annotations', {
     method: 'POST',
