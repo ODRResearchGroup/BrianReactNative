@@ -3,6 +3,7 @@ import { Platform } from 'react-native';
 import ReactNativeBlobUtil from 'react-native-blob-util';
 import { zip } from 'react-native-zip-archive';
 import Share from 'react-native-share';
+import { DateTime } from 'luxon';
 import {
   listAnnotationsByWalkId,
   listAllSensorRecords,
@@ -106,6 +107,22 @@ function csvValue(value: string | number | null | undefined): string {
   return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 }
 
+function adjustTimestampForLocalTimezone(timestampMs: number): number {
+  const timestamp = DateTime.fromMillis(timestampMs);
+  if (!timestamp.isValid) {
+    throw new Error(`Invalid timestamp: ${timestampMs}`);
+  }
+  return timestampMs + timestamp.offset * 60_000;
+}
+
+function formatLocalTimestamp(timestampMs: number): string {
+  const timestamp = DateTime.fromMillis(timestampMs).toISO();
+  if (timestamp === null) {
+    throw new Error(`Invalid timestamp: ${timestampMs}`);
+  }
+  return timestamp;
+}
+
 async function writeSmellWalkCsvFile(walkId: string): Promise<{
   fileName: string;
   csvPath: string;
@@ -139,7 +156,7 @@ async function writeSmellWalkCsvFile(walkId: string): Promise<{
     ...records.map(record =>
       [
         walkId,
-        new Date(record.recordedAt).toISOString(),
+        formatLocalTimestamp(record.recordedAt),
         record.latitude,
         record.longitude,
         record.accuracyM,
@@ -214,7 +231,14 @@ export async function exportSmellWalkZip(walkId: string): Promise<string> {
     RNFS.writeFile(`${stagingDir}/samples.csv`, csvContents, 'utf8'),
     RNFS.writeFile(
       `${stagingDir}/walk_samples.json`,
-      JSON.stringify(samples, null, 2),
+      JSON.stringify(
+        samples.map(sample => ({
+          ...sample,
+          recordedAt: adjustTimestampForLocalTimezone(sample.recordedAt),
+        })),
+        null,
+        2,
+      ),
       'utf8',
     ),
     RNFS.writeFile(
