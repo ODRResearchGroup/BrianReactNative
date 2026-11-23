@@ -38,7 +38,7 @@ export async function exportAllData(): Promise<void> {
   ]);
 
   const manifest: ExportManifest = {
-    exportedAt: new Date().toISOString(),
+    exportedAt: formatLocalTimestamp(Date.now()),
     appVersion: '1.0.0',
     schema: 'smellwalk_export_v1',
     counts: { sensorRecords: sensorRecords.length, captures: captures.length },
@@ -58,12 +58,12 @@ export async function exportAllData(): Promise<void> {
     ),
     RNFS.writeFile(
       `${stagingDir}/sensor_records.json`,
-      JSON.stringify(sensorRecords, null, 2),
+      JSON.stringify(formatExportTimestampFields(sensorRecords), null, 2),
       'utf8',
     ),
     RNFS.writeFile(
       `${stagingDir}/captures.json`,
-      JSON.stringify(captures, null, 2),
+      JSON.stringify(formatExportTimestampFields(captures), null, 2),
       'utf8',
     ),
   ]);
@@ -107,20 +107,49 @@ function csvValue(value: string | number | null | undefined): string {
   return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 }
 
-function adjustTimestampForLocalTimezone(timestampMs: number): number {
-  const timestamp = DateTime.fromMillis(timestampMs);
-  if (!timestamp.isValid) {
-    throw new Error(`Invalid timestamp: ${timestampMs}`);
-  }
-  return timestampMs + timestamp.offset * 60_000;
-}
-
 function formatLocalTimestamp(timestampMs: number): string {
   const timestamp = DateTime.fromMillis(timestampMs).toISO();
   if (timestamp === null) {
     throw new Error(`Invalid timestamp: ${timestampMs}`);
   }
   return timestamp;
+}
+
+const EXPORT_TIMESTAMP_FIELDS = new Set([
+  'recordedAt',
+  'capturedAt',
+  'savedAt',
+  'startedAt',
+  'resumedAt',
+  'endedAt',
+  'syncedAt',
+  'influxSyncedAt',
+  'createdAt',
+  'exportedAt',
+  'timestamp',
+]);
+
+function formatExportTimestampFields(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(formatExportTimestampFields);
+  }
+
+  if (value === null || typeof value !== 'object') {
+    return value;
+  }
+
+  return Object.fromEntries(
+    Object.entries(value).map(([key, fieldValue]) => {
+      if (
+        EXPORT_TIMESTAMP_FIELDS.has(key) &&
+        typeof fieldValue === 'number' &&
+        Number.isFinite(fieldValue)
+      ) {
+        return [key, formatLocalTimestamp(fieldValue)];
+      }
+      return [key, formatExportTimestampFields(fieldValue)];
+    }),
+  );
 }
 
 async function writeSmellWalkCsvFile(walkId: string): Promise<{
@@ -232,10 +261,7 @@ export async function exportSmellWalkZip(walkId: string): Promise<string> {
     RNFS.writeFile(
       `${stagingDir}/walk_samples.json`,
       JSON.stringify(
-        samples.map(sample => ({
-          ...sample,
-          recordedAt: adjustTimestampForLocalTimezone(sample.recordedAt),
-        })),
+        formatExportTimestampFields(samples),
         null,
         2,
       ),
@@ -243,17 +269,17 @@ export async function exportSmellWalkZip(walkId: string): Promise<string> {
     ),
     RNFS.writeFile(
       `${stagingDir}/fingerprints.json`,
-      JSON.stringify(fingerprints, null, 2),
+      JSON.stringify(formatExportTimestampFields(fingerprints), null, 2),
       'utf8',
     ),
     RNFS.writeFile(
       `${stagingDir}/captures.json`,
-      JSON.stringify(captures, null, 2),
+      JSON.stringify(formatExportTimestampFields(captures), null, 2),
       'utf8',
     ),
     RNFS.writeFile(
       `${stagingDir}/annotations.json`,
-      JSON.stringify(annotations, null, 2),
+      JSON.stringify(formatExportTimestampFields(annotations), null, 2),
       'utf8',
     ),
   ]);
@@ -306,7 +332,11 @@ export async function exportFingerprintsJson(
   const fileName = `fingerprints_${timestamp}.json`;
   const jsonPath = `${RNFS.DocumentDirectoryPath}/${fileName}`;
 
-  await RNFS.writeFile(jsonPath, JSON.stringify(fingerprints, null, 2), 'utf8');
+  await RNFS.writeFile(
+    jsonPath,
+    JSON.stringify(formatExportTimestampFields(fingerprints), null, 2),
+    'utf8',
+  );
 
   if (Platform.OS === 'android') {
     return ReactNativeBlobUtil.MediaCollection.copyToMediaStore(
